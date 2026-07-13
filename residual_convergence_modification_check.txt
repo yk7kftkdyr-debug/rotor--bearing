@@ -1,0 +1,42 @@
+Residual convergence modification check
+
+1. 原始严格判据是否保留
+   是。newmark_newton_multi.m 中仍保留原始主判据：
+   err_x < tol_x && err_R < tol_R。
+   原始 err_R、tol_R、tol_x 和 reported unconverged steps 均未删除。
+
+2. 工程收敛分类是否加入报告
+   是。求解结果新增 sim.convergence 统计，包括：
+   strict_count / engineering_count / mild_count / serious_count，
+   strict_ratio / engineering_ratio / mild_ratio / serious_ratio，
+   strict_plus_engineering_ratio。
+   report_generator.m 中新增 Convergence criterion and residual diagnostics 段落输出这些比例。
+
+3. 归一化残差是否作为诊断指标输出
+   是。newmark_newton_multi.m 记录 residual_diagnostics，并输出：
+   err_R_original max/median/p95/p99，
+   err_R_norm_ref max/median/p95/p99，
+   err_x max/median，
+   normalized strict/engineering/mild/serious ratios。
+
+4. 归一化辅助判据是否作为可选开关且默认关闭
+   是。initial_conditions.m 中默认配置为：
+   config.enable_residual_diagnostics = true;
+   config.use_normalized_residual_assisted_convergence = false;
+   config.allow_normalized_assisted_for_batch_screening = false;
+   归一化辅助判据只有在 use_normalized_residual_assisted_convergence=true 时才可能参与停止迭代，且原始严格判据始终优先。
+
+5. 批量筛选保护是否加入
+   是。如果 use_normalized_residual_assisted_convergence=true 且检测到批量筛选上下文，但 allow_normalized_assisted_for_batch_screening=false，程序会警告并回退为原始严格判据。
+   报告中也会提示该辅助判据未授权用于批量筛选。
+
+6. 是否完成一次小范围运行或语法检查
+   是。已使用 MATLAB R2024a 完成：
+   - initial_conditions.m、newmark_newton_multi.m、report_generator.m 的 checkcode 检查；
+   - 默认配置自检，结果为 enable=1, assist=0, batch=0；
+   - 关键逻辑字符串自检，确认原始严格判据、归一化辅助开关、err_R_norm_ref 和报告段落存在。
+   自检输出 SELF_CHECK_PASS。
+
+7. 是否建议合并主程序
+   建议合并本次小范围修改。
+   原因：本次修改只增加收敛判据管理、残差诊断字段和报告说明；默认状态下不启用归一化辅助判据，不改变动力学模型、轴承接触力模型、预载、不平衡量、转速、节点、油膜模型或热效应模型，也不改变默认求解响应。
