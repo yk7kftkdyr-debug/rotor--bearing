@@ -1,10 +1,4 @@
-function sim = newmark_newton_multi(params)
-%NEWMARK_NEWTON_MULTI Legacy one-step Newmark iteration compatibility entry.
-% This wrapper intentionally preserves the existing second-stage equations.
-% Its workspace variables are supplied by the legacy caller; the params input
-% establishes the function interface used by main.m without altering them.
-
-%% 该程序为newmark_newton算法
+﻿%% 该程序为newmark_newton算法
 % 输入参数：① i: 每一个时间步长内newmark循环的次数
 %           ② t: 程序整体的计算时间
 xn=yn(:,n);
@@ -85,14 +79,5 @@ dxn1 = dxn + a6*ddxn + a7*ddxn1;
 yn(:,n+1)=xn1;
 dyn(:,n+1)=dxn1;
 ddyn(:,n+1)=ddxn1;
-
-sim = struct();
-sim.yn = yn;
-sim.dyn = dyn;
-sim.ddyn = ddyn;
-sim.F_bearing = Fr;
-sim.last_step = n + 1;
-sim.params = params;
-end
 
 
