@@ -1,13 +1,190 @@
-function [Fb_global, bearingState] = F_bearing(q, qd, params, N_dof)
-%F_BEARING è½´æ‰¿éçº¿æ€§æ¥è§¦åŠ›ç»Ÿä¸€å…¥å£ã€‚
-% è¾“å…¥ï¼š
-%   q, qd  - å½“å‰å…¨å±€ä½ç§»ã€é€Ÿåº¦
-%   params - å·¥å†µä¸è½´æ‰¿å‚æ•°
-%   N_dof  - æ€»è‡ªç”±åº¦æ•°
-% è¾“å‡ºï¼š
-%   Fb_global    - è£…é…åˆ°å…¨å±€åæ ‡çš„è½´æ‰¿åŠ›
-%   bearingState - æ¯ä¸ªè½´æ‰¿çš„æ¥è§¦ã€æ²¹è†œã€PVã€æ»‘ç§»ç­‰çŠ¶æ€
-
-[Fb_global, bearingState] = nonlinear_bearing_force(q, qd, params, params.bearing, N_dof);
+%% Öá³Ğ²ÎÊı
+Z = data(1);                      %Çò¸öÊı
+d = data(2);                      %ÇòµÄÖ±¾¶
+R = data(3); r = data(4);         %ÍâÈ¦¡¢ÄÚÈ¦Ö±¾¶£¨ÄÚÍâ¹µ²ÛÇúÂÊ°ë¾¶£©
+DP = (R+r)/2;                     %Çò¼ä¾àÖ±¾¶£¨½ÚÔ²Ö±¾¶£©
+omega_rpm = data(7);              %×ª×Ó×ªËÙ
+omega = omega_rpm*2*pi/60;
+jiechujiao = data(11);            %¹ö¶¯Öá³Ğ½Ó´¥½Ç
+Wc= omega*((DP-d*cos(jiechujiao))/(2*DP));              %Öá³Ğ¹öÖéµÄÍ¨¹ıÆµÂÊ£¨±£³Ö¼Ü×ªËÙ£©
+Wb = DP/(2*d)*(1-(((d*cos(jiechujiao))/DP)^2))*omega;%¹ö¶¯Ìå×Ô×ª½ÇËÙ¶È
+k = 1;                            %µÚk¸öÇò¹ÊÕÏ
+sita = @(t,loc)(2*pi*(loc-1)/Z+Wc*t);%Çò·½Î»½Çº¯Êı
+sita_k = Wb*t+2*pi/Z*(k-1);       %ËğÉË¹ö¶¯Ìå½ÇÎ»ÖÃ
+sita_in = omega*t;                %ÄÚÈ¦½ÇÎ»ÒÆ
+guzhang = data(5);                %ÊÇ·ñ¹ÊÕÏ£¨1£º¹ÊÕÏ¡¢2£º²»¹ÊÕÏ£©
+C_b = data(6);                    %Öá³ĞµÄ½Ó´¥¸Õ¶È
+f1 = data(12);  f2 = data(13);    %ÍâÈ¦ÄÚÈ¦ÇúÂÊÏµÊı
+niandu0 = data(14);               %Èó»¬ÓÍÕ³¶È
+nianya0 = data(15);               %Õ³Ñ¹ÏµÊı
+ee1 = data(16);   ee2 = data(16);   %ÍâÄÚÈ¦µ¯Ä£
+o1 = data(18);   o2 = data(18);   %ÍâÄÚÈ¦²´ËÉ±È
+ee3 =  data(17)  ;                %¹ö¶¯Ìåµ¯Ä£                          
+o3 = data(19);                    %¹ö¶¯Ìå²´ËÉ±È
+beitajiao=atan(sin(jiechujiao)/(cos(jiechujiao)+d/DP));
+%%
+F_r = [data(10);0;data(10);0];
+miu_0 = data(9);                  %³õÊ¼¼äÏ¶
+L1 = 1;                           %ÍâÈ¦¹ÊÕÏµãËğÉËÖ±¾¶Ö±¾¶£¨mm£©
+L2 = 5;                           %ÄÚÈ¦¹ÊÕÏµãËğÉËÖ±¾¶Ö±¾¶£¨mm£©
+L3 = 30;                           %¹ö¶¯Ìå¹ÊÕÏµãËğÉËÖ±¾¶Ö±¾¶£¨mm£©
+beita1 = asin(L1/(R));            %ÍâÈ¦¹ÊÕÏ½Ç
+beita2 = asin(L2/(2*r));          %ÄÚÈ¦¹ÊÕÏ½Ç
+beita3 = asin(L3/d);              %¹ö¶¯Ìå¹ÊÕÏ½Ç
+for loc=1:Z
+    e1(n,loc) = abs(mod(sita(t,loc),2*pi));%ÍâÈ¦¹ÊÕÏ
+    jiaodu = sita(t,loc)-sita_in;
+    e2 = abs(mod(jiaodu,2*pi));     %ÄÚÈ¦¹ÊÕÏ
+    e3_in = abs(mod(sita_k-1/2*pi,2*pi));
+    e3_out = abs(mod(sita_k-3/2*pi,2*pi));
+    %% ÅĞ¶Ï¹ÊÕÏĞÎÊ½
+    if guzhang == 1              %1:ÍâÈ¦£¬2£ºÄÚÈ¦£¬3£º¹ö¶¯Ìå£¬12£ºÄÚÍâÈ¦ñîºÏ£¬13£ºÍâÈ¦¹ö¶¯ÌåñîºÏ£¬23£ºÄÚÈ¦¹ö¶¯ÌåñîºÏ
+        if e1(n,loc) <beita1
+            nd=3;    miu=miu_0+((d/2-sqrt((d/2)^2-((L1)/2)^2))*10^(-3));
+        else
+            nd=1.5;  miu=miu_0;
+        end
+    elseif guzhang == 2  
+        if e2<beita2
+            nd=3;    miu=miu_0+((d/2-sqrt((d/2)^2-((L2)/2)^2))*10^(-3));%(Ã»Ğ´ºÃ)
+        else
+            nd=1.5;  miu=miu_0;
+        end
+    elseif guzhang == 3  
+        if e3_in<beita3 || e3_out<beita3
+            nd=3;    miu=miu_0+((d/2-sqrt((d/2)^2-((L3)/2)^2))*10^(-3));
+        else
+            nd=1.5;  miu=miu_0;
+        end
+    elseif guzhang == 12  
+        if e1<beita1
+            nd=3;    miu=miu_0+((d/2-sqrt((d/2)^2-((L1)/2)^2))*10^(-3));
+        elseif e2<beita2
+            nd=3;    miu=miu_0+((d/2-sqrt((d/2)^2-((L2)/2)^2))*10^(-3));
+        else
+            nd=1.5;  miu=miu_0;
+        end
+    elseif guzhang == 13  
+        if e1<beita1
+            nd=3;    miu=miu_0+((d/2-sqrt((d/2)^2-((L1)/2)^2))*10^(-3));
+        elseif e3_in<beita3 || e3_out<beita3
+            nd=3;    miu=miu_0+((d/2-sqrt((d/2)^2-((L3)/2)^2))*10^(-3));
+        else
+            nd=1.5;  miu=miu_0;
+        end
+    elseif guzhang == 23  
+        if e2<beita2
+            nd=3;    miu=miu_0+((d/2-sqrt((d/2)^2-((L2)/2)^2))*10^(-3));
+        elseif e3_in<beita3 || e3_out<beita3
+            nd=3;    miu=miu_0+((d/2-sqrt((d/2)^2-((L3)/2)^2))*10^(-3));
+        else
+            nd=1.5;  miu=miu_0;
+        end
+    else
+        nd=1.5;  miu=miu_0;
+    end
+    %% ¼ÆËãÓÍÄ¤ºñ¶È
+%     Rx1=d*(0.5*DP/cos(jiechujiao)+0.5*d)/(DP/cos(jiechujiao) );   %Dw£º¹ö¶¯ÌåÖ±¾¶ Dm£º½ÚÔ²Ö±¾¶  ÇòºÍÍâÈ¦ÔÚ½Ó´¥ÍÖÔ²µÄÓĞĞ§°ë¾¶
+%     Ry1=f1*d/(2*f1-1);                             %f1 ÍâÈ¦ÇúÂÊ°ë¾¶     0.5232
+%     Rx2=d*(0.5*DP/cos(jiechujiao)-0.5*d)/(DP/cos(jiechujiao) ); 
+%     Ry2=f2*d/(2*f2-1);
+%     E1=2/(((1-o1^2)/ee1)+((1-o3^2)/ee3));             %ÇòÍâÈ¦µÄÓĞĞ§µ¯Ä£  e1£¬e3ÎªÍâÈ¦ºÍÇòµÄµ¯ĞÔÄ£Á¿£¬o1£¬o3ÎªÍâÈ¦£¬ÇòµÄ²´ËÉ±È
+%     E2=2/(((1-o2^2)/ee2)+((1-o3^2)/ee3));             %e1£¬e3ÎªÄÚÈ¦ºÍÇòµÄµ¯ĞÔÄ£Á¿£¬o1£¬o3ÎªÄÚÈ¦£¬ÇòµÄ²´ËÉ±È
+%     K1=1.0339*(Ry1/Rx1)^0.636;                      %ÇòºÍÍâÈ¦½Ó´¥ÍÖÔ²µÄÍÖÔ²ÂÊ
+%     K2=1.0339*(Ry2/Rx2)^0.636;
+%     Wo=omega*(1-d/DP*cos(jiechujiao))*(cos(jiechujiao)+tan(beitajiao)*sin(jiechujiao))...
+%         /(( 1-d/DP*cos(jiechujiao))*(cos(jiechujiao)+tan(beitajiao)*sin(jiechujiao))...
+%         +(1+d/DP*cos(jiechujiao))*(cos(jiechujiao)+tan(beitajiao)*sin(jiechujiao)));
+%     Wx=-omega*(1-d/DP*cos(jiechujiao))*(1+d/DP*cos(jiechujiao))/((1-d/DP*cos(jiechujiao))...
+%         *(cos(jiechujiao)+tan(beitajiao)*sin(jiechujiao))+(1+d/DP*cos(jiechujiao))...
+%         *(cos(jiechujiao)+tan(beitajiao)*sin(jiechujiao)) )/(d/DP);
+%     %W2Îª×ª×Ó×ªËÙ
+%     U1(loc)=abs(-Wo*DP/4-0.5*(abs(Wx)*cos(jiechujiao)+ Wo*cos(jiechujiao))*(d/2)); %Wo£º¹«×ª½ÇËÙ¶È£»Wx£ºÈÆÖáÏò×Ô×ªËÙ¶È£»
+%     U2(loc)=abs(-Wo*DP/4-0.5*(abs(Wx)*cos(jiechujiao)+ Wo*cos(jiechujiao))*(d/2));
+%     if n == 1
+%         oilh1(1)=0.114*10^(-6);oilh1(2)=0.114*10^(-6);oilh1(3)=0.114*10^(-6);oilh1(4)=0.114*10^(-6);oilh1(5)=0.115*10^(-6);
+%         oilh1(6)=0.116*10^(-6);oilh1(7)=0.117*10^(-6);oilh1(8)=0.118*10^(-6);oilh1(9)=0.118*10^(-6);oilh1(10)=0.119*10^(-6);
+%         oilh1(11)=0.119*10^(-6);oilh1(12)=0.119*10^(-6);oilh1(13)=0.118*10^(-6);oilh1(14)=0.118*10^(-6);oilh1(15)=0.117*10^(-6);
+%                 
+%         oilh2(1)=0.113*10^(-6);oilh2(2)=0.114*10^(-6);oilh2(3)=0.113*10^(-6);oilh2(4)=0.114*10^(-6);oilh2(5)=0.115*10^(-6);
+%         oilh2(6)=0.116*10^(-6);oilh2(7)=0.117*10^(-6);oilh2(8)=0.118*10^(-6);oilh2(9)=0.118*10^(-6);oilh2(10)=0.119*10^(-6);
+%         oilh2(11)=0.119*10^(-6);oilh2(12)=0.119*10^(-6);oilh2(13)=0.118*10^(-6);oilh2(14)=0.118*10^(-6);oilh2(15)=0.117*10^(-6);
+%     else 
+% %         oilh1(loc)=Rx1*3.63*(niandu0*U1(loc)/(E1*Rx1))^(0.68)*...
+% %                  (nianya0*E1)^(0.49)*(Q_b(loc)/Rx1^2/E1)^(-0.073)*(1-exp(-0.68*K1));
+% %         oilh2(loc)=Rx2*3.63*(niandu0*U2(loc)/(E2*Rx2))^(0.68)*...
+% %                  (nianya0*E2)^(0.49)*(Q_b(loc)/Rx2^2/E2)^(-0.073)*(1-exp(-0.68*K2));
+%         oilh1(1)=0.114*10^(-6);oilh1(2)=0.114*10^(-6);oilh1(3)=0.114*10^(-6);oilh1(4)=0.114*10^(-6);oilh1(5)=0.115*10^(-6);
+%         oilh1(6)=0.116*10^(-6);oilh1(7)=0.117*10^(-6);oilh1(8)=0.118*10^(-6);oilh1(9)=0.118*10^(-6);oilh1(10)=0.119*10^(-6);
+%         oilh1(11)=0.119*10^(-6);oilh1(12)=0.119*10^(-6);oilh1(13)=0.118*10^(-6);oilh1(14)=0.118*10^(-6);oilh1(15)=0.117*10^(-6);
+%                 
+%         oilh2(1)=0.113*10^(-6);oilh2(2)=0.114*10^(-6);oilh2(3)=0.113*10^(-6);oilh2(4)=0.114*10^(-6);oilh2(5)=0.115*10^(-6);
+%         oilh2(6)=0.116*10^(-6);oilh2(7)=0.117*10^(-6);oilh2(8)=0.118*10^(-6);oilh2(9)=0.118*10^(-6);oilh2(10)=0.119*10^(-6);
+%         oilh2(11)=0.119*10^(-6);oilh2(12)=0.119*10^(-6);oilh2(13)=0.118*10^(-6);oilh2(14)=0.118*10^(-6);oilh2(15)=0.117*10^(-6);
+%     end
+%     oilh(n,loc) = oilh1(loc)+oilh2(loc);
+    %% ¼ÆËãÖá³Ğ½Ó´¥Á¦
+   %% ===== ¼ÆËãÖá³ĞÏà¶ÔÎ»ÒÆ =====
+% r1¡¢r2£º×ª×ÓÖá³Ğ½Úµã
+% c1¡¢c2£º»úÏ»Öá³Ğ×ù½Úµã
+% ×¢Òâ£ºÕâÀï±ØĞëºÍ main ÖĞµÄ r1¡¢r2¡¢c1¡¢c2 ÍêÈ«Ò»ÖÂ
+if data(8) == 2
+    % Öá³Ğ1£º×ª×Ó r1 Ïà¶Ô»úÏ» c1
+    X(1) = x_it(4*r1-3) - x_it(num_rotor + 4*c1-3);
+    Y(1) = x_it(4*r1-2) - x_it(num_rotor + 4*c1-2);
+    % Öá³Ğ2£º×ª×Ó r2 Ïà¶Ô»úÏ» c2
+    X(2) = x_it(4*r2-3) - x_it(num_rotor + 4*c2-3);
+    Y(2) = x_it(4*r2-2) - x_it(num_rotor + 4*c2-2);
+elseif data(8) == 1
+    % ¹Ì¶¨Ö§³ĞÄ£ĞÍ£º»úÏ»/»ù´¡Î»ÒÆÎª0
+    X(1) = x_it(4*r1-3);
+    Y(1) = x_it(4*r1-2);
+    X(2) = x_it(4*r2-3);
+    Y(2) = x_it(4*r2-2);
 end
+    %P2=5e-6*cos(30*sita(t,loc)+pi/2);  %²¨ÎÆ¶È
+    P2 = 0;
+    %ud=(1.11345-1.05186*0.98276^(data(10)))*1e-6;              %ÔÓÖÊ²úÉúµÄÌØÕ÷Î»ÒÆ
+    ud=0;    
+    wenli = 6;                                                 %±íÃæÎÆÀí²ÎÊı£¬ºáÏòÌõÎÆ±íÃæ¦Ã<1;×İÏòÌõÎÆ±íÃæ¦Ã>1£¬¸÷ÏòÍ¬ĞÔ±íÃæ¦Ã=1¡£
+    Cr = 1.28*exp(-0.057*6-0.0763*wenli);                      %±íÃæÎÆÀí¶Ô³õÊ¼ÓÍÄ¤ºñ¶ÈµÄÓ°Ïì
+    %Cr = 1;
+    %% ===== ¹¤×÷ÓÎÏ¶ĞŞÕı£ºÓÉÔ¤ÔØ¼ÆËãÓĞĞ§ÓÎÏ¶ =====
+miu0 = miu;     % ³õÊ¼¾¶ÏòÓÎÏ¶
+F_pre = [2000 20000];   % Á½¸öÖá³ĞÔ¤ÔØ£¬µ¥Î» N
+dmu_pre = zeros(1,2);
+miu_eff = zeros(1,2);
+for ib = 1:2
+    dmu_pre(ib) = (F_pre(ib)/C_b)^(1/nd);
+    miu_eff(ib) = miu0 - dmu_pre(ib);
+    % ±ÜÃâ³öÏÖ·ÇÎïÀí¸ºÓÎÏ¶
+    miu_eff(ib) = max(miu_eff(ib), 0);
+end
+delta(1) = X(1).*cos(sita(t,loc))+ Y(1).*sin(sita(t,loc))- miu_eff(1) + ud - P2;
+delta(2) = X(2).*cos(sita(t,loc))+ Y(2).*sin(sita(t,loc))- miu_eff(2) + ud - P2;
+   % miu = Cr*miu;
+   % delta(1) = X(1).*cos(sita(t,loc))+Y(1).*sin(sita(t,loc))-miu+ud-P2;
+   % delta(2) = X(2).*cos(sita(t,loc))+Y(2).*sin(sita(t,loc))-miu+ud-P2;
+    %ÇòÖá³Ğ½Ó´¥Á¦
+    Q_b(loc) = C_b*(delta(1)).^(nd).*heaviside(delta(1));%ºÕ×È½Ó´¥Á¦£¬F=k¦Ä3/2´ÎÃİ
+    Q_r(loc) = C_b*(delta(2)).^(nd).*heaviside(delta(2));
+    F_xbRi(loc) = C_b*(delta(1)).^(nd).*heaviside(delta(1)).*cos(sita(t,loc));
+    F_ybRi(loc) = C_b*(delta(1)).^(nd).*heaviside(delta(1)).*sin(sita(t,loc));
+    %¹ö×ÓÖá³Ğ½Ó´¥Á¦
+    F_xrRi(loc) = C_b*(delta(2)).^(nd).*heaviside(delta(2)).*cos(sita(t,loc));
+    F_yrRi(loc) = C_b*(delta(2)).^(nd).*heaviside(delta(2)).*sin(sita(t,loc));
+end
+F_xbR = sum(F_xbRi(:)); %ËùÓĞ¹öÖéÁ¦µş¼Ó
+F_ybR = sum(F_ybRi(:));
+F_xrR = sum(F_xrRi(:)); 
+F_yrR = sum(F_yrRi(:));
 
+%F_b(:,n) = [F_xbR;F_ybR;F_xrR;F_yrR];
+%F_xt(:,n) = F_r-F_b(:,n);
+%mosun(n) = miu;
+F_b_now = [F_xbR;F_ybR;F_xrR;F_yrR];%ÓÉ±äĞÎ²úÉúµÄ·´½Ó´¥Á¦£¬Öá³Ğ·´¿¹±äĞÎ
+F_xt = F_r - F_b_now;%F_rÍâÔØ£¬Êµ¼Ê×÷ÓÃÔÚ×ª×ÓÉÏµÄ¾»Öá³ĞÁ¦
+miu_now = miu;
+if loc == 1
+    fprintf('miu_eff1 = %.3e, miu_eff2 = %.3e\n',miu_eff(1),miu_eff(2));
+end
