@@ -7,12 +7,13 @@ params = struct();
 
 % Uploaded Newmark rotor-case model. The path is assembled with Unicode
 % code points to avoid Windows MATLAB source-encoding problems.
-params.use_uploaded_rotor_model = true;
+params.use_uploaded_rotor_model = false; % Stage-1 uses the checked-in 19/13-node model.
 params.uploaded_model_dir = char([68 58 92 24120 29992 25991 20214 92 31243 24207 92 31243 24207 92 78 101 119 109 97 114 107 35299 25925 38556 36724 25215]);
 params.report_file = 'D:\bearing\gunzi\2.txt';
 
-% Rotor node positions, m.
-params.node_pos = [0 cumsum([30 107 20.5 40.5 99 115.25 115.25 82 70 102.02 66.98 58 23 98.5 58.5 42.5]/1000)];
+% Rotor node positions, m: 19 nodes. The former terminal span is split so
+% elements 15--17 retain the whole-disc stiffness region; mass is at R16.
+params.node_pos = [0 cumsum([30 107 20.5 40.5 99 115.25 115.25 82 70 102.02 66.98 58 23 50 50 40 30 29.5]/1000)];
 
 % Shaft section parameters, SI units.
 params.shaft_od = 0.038;
@@ -22,30 +23,41 @@ params.E = 2.145e11;
 params.G = 8.1e10;
 params.nu = 0.2808;
 
-% Discs.
-params.disc_nodes = [4 6 8 14];
-params.disc_od = [0.105 0.115 0.110 0.090];
-params.disc_id = [0.038 0.038 0.038 0.038];
-params.disc_thick = [0.025 0.030 0.028 0.022];
+% Mass model: bare shaft core remains distributed; two concentrated masses
+% are at R6/R8 and the complete disk mass is concentrated only at R16.
+params.mass_target.shaft_N = 798.789;
+params.mass_target.concentrated_N = 4142.074;
+params.mass_target.disk_N = 1439.930;
+params.mass_target.case_N = 20532.445;
+params.mass_target.ball_reaction_N = 1581.121;
+params.mass_target.roller_reaction_N = 4799.671;
+params.concentrated_mass.nodes = [6 8];
+% R6/R8 split is calibrated to the supplied vertical reaction closure.
+params.concentrated_mass.kg = (params.mass_target.concentrated_N/9.80665)*[0.841568 0.158432];
+params.disk_mass.node = 16;
+params.disk_mass.kg = params.mass_target.disk_N/9.80665;
+params.shaft_mass_rho = (params.mass_target.shaft_N/9.80665)/(pi/4*(params.shaft_od^2-params.shaft_id^2)*params.node_pos(end));
 
 % Fallback case model.
-params.case_node_pos = params.node_pos;
+params.case_node_pos = params.node_pos([1 2 3 5 6 8 9 10 12 14 16 18 19]); % 13 nodes; C2=R2, C8=R10.
 params.case_od = 0.120;
 params.case_id = 0.095;
 params.case_rho = 7830;
 params.case_E = 2.06e11;
-params.case_ground_k = 2.0e8;
-params.case_ground_c = 1.5e3;
+params.case_mass_rho = (params.mass_target.case_N/9.80665)/(pi/4*(params.case_od^2-params.case_id^2)*(params.case_node_pos(end)-params.case_node_pos(1)));
+params.case_ground_nodes = [1 13];
+params.case_ground_k = 5.0e8;
+params.case_ground_c = 2.0e3;
 
 % Bearing node input: front angular-contact ball + rear cylindrical roller.
 bearing(1).type = 'ball';
 bearing(1).rotor_node = 2;
-bearing(1).case_node = 3;
+bearing(1).case_node = 2;
 bearing(1).name = 'front angular contact ball bearing';
 
 bearing(2).type = 'roller';
 bearing(2).rotor_node = 10;
-bearing(2).case_node = 10;
+bearing(2).case_node = 8;
 bearing(2).name = 'rear cylindrical roller bearing';
 
 % Front ball bearing parameters.
@@ -119,11 +131,11 @@ bearing(2).linear_c = 1.5e3;
 
 params.bearing = bearing;
 
-% Unbalance input.
-params.unbalance.nodes = [4 6 8 14];
-params.unbalance.mass_g = [126.3 159.4 149.7 145.9];
-params.unbalance.ecc_mm = [0.1206 0.1206 0.1206 0.1206];
-params.unbalance.phase = [0 pi/3 2*pi/3 pi];
+% Static reconstruction has no unbalance excitation.
+params.unbalance.nodes = [];
+params.unbalance.mass_g = [];
+params.unbalance.ecc_mm = [];
+params.unbalance.phase = [];
 
 % Optional external radial disturbance on rotor nodes, N.
 % Preloads are not repeated here.

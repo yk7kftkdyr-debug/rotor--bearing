@@ -17,21 +17,11 @@ fprintf('Official case: %s\n', get_field_default(params.case_definition, 'name',
 fprintf('Speed: %.3f r/min, omega = %.6f rad/s\n', params.rpm, params.omega);
 fprintf('Bearing 1: %s, rotor node %d, case node %d\n', params.bearing(1).type, params.bearing(1).rotor_node, params.bearing(1).case_node);
 fprintf('Bearing 2: %s, rotor node %d, case node %d\n', params.bearing(2).type, params.bearing(2).rotor_node, params.bearing(2).case_node);
-fprintf('Assembly interference establishes contact only; no prescribed bearing radial reaction is used.\n');
-fprintf('Rotor-node steady-load Fy: %s N\n', mat2str(params.static_load.Fy));
+fprintf('Quasi preload only: bearing1 %.1f kN, bearing2 %.1f kN\n', ...
+    params.bearing(1).preload_z/1000, params.bearing(2).preload_z/1000);
+fprintf('Rotor-node static_load Fy: %s N\n', mat2str(params.static_load.Fy));
 
-% 1) Stage-1 static work point: K_s*q0 - F_static - F_bearing(q0) = 0.
-staticEq = solve_static_equilibrium(params);
-params.static_equilibrium_result = staticEq;
-fprintf('Static work point: R/Fref=%.3e, ball Fr=%.3f N, roller Fr=%.3f N, vertical balance error=%.3e N\n', ...
-    staticEq.normalized_residual, staticEq.bearing(1).Fr, staticEq.bearing(2).Fr, staticEq.force_balance_error_vertical);
-fprintf('  Front ball Fx/Fy = %.3f / %.3f N; Fr-reference difference = %.3f N\n', ...
-    staticEq.bearing(1).Fx, staticEq.bearing(1).Fy, staticEq.bearing(1).Fr - params.reference_ball_reaction);
-fprintf('  Rear roller Fx/Fy = %.3f / %.3f N; Fr-reference difference = %.3f N\n', ...
-    staticEq.bearing(2).Fx, staticEq.bearing(2).Fy, staticEq.bearing(2).Fr - params.reference_roller_reaction);
-
-% 2) Existing quasi-dynamic module remains available; prescribed 20/80 kN
-% reactions no longer enter its closure or the rotor equation.
+% 1) Bearing quasi-dynamic calculations. Preloads are used here only.
 for ib = 1:numel(params.bearing)
     params.bearing(ib).kx = [];
     params.bearing(ib).ky = [];
@@ -42,9 +32,9 @@ end
 [bearingQD{2}, params.bearing(2)] = bearing_quasi_dynamic_roller(params.bearing(2), params);
 for ib = 1:numel(params.bearing)
     [params.bearing(ib), bearingQD{ib}] = apply_support_compliance(params.bearing(ib), bearingQD{ib});
-    params.bearing(ib).operating_offset_x = 0;
-    params.bearing(ib).operating_offset_y = 0;
-    params.bearing(ib).subtract_preload_baseline = false;
+    params.bearing(ib).operating_offset_x = bearingQD{ib}.operating_offset_x;
+    params.bearing(ib).operating_offset_y = bearingQD{ib}.operating_offset_y;
+    params.bearing(ib).subtract_preload_baseline = true;
 end
 bearingTxtFiles = write_bearing_quasi_txt_reports(params, bearingQD);
 
@@ -58,12 +48,12 @@ for ib = 1:numel(bearingTxtFiles)
     fprintf('  %s\n', bearingTxtFiles{ib});
 end
 
-% 3) Strong coupled rotor-case response, initialized at the static work point.
+% 2) Strong coupled rotor-case response.
 sim = newmark_newton_multi(params);
 if isfield(sim, 'modelInfo')
     params.modelInfo = sim.modelInfo;
 end
-save(params.solver_checkpoint_file, 'params', 'bearingQD', 'bearingTxtFiles', 'staticEq', 'sim', '-v7.3');
+save(params.solver_checkpoint_file, 'params', 'bearingQD', 'bearingTxtFiles', 'sim', '-v7.3');
 
 if get_field_default(params, 'postprocess_in_separate_matlab', false)
     status = run_postprocess_in_separate_matlab(params.solver_checkpoint_file);
@@ -84,7 +74,7 @@ post = post_process(sim, params, bearingQD);
 report_generator(params, bearingQD, sim, post);
 generate_word_manual(params.manual_file);
 
-save(params.result_mat_file, 'params', 'bearingQD', 'bearingTxtFiles', 'staticEq', 'sim', 'post', '-v7.3');
+save(params.result_mat_file, 'params', 'bearingQD', 'bearingTxtFiles', 'sim', 'post', '-v7.3');
 
 print_console_summary(params, bearingQD, post);
 close all force;

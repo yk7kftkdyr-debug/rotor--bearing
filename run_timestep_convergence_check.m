@@ -36,6 +36,7 @@ for iFen = 1:numel(Fen_list)
     params.solver_checkpoint_file = fullfile(params.output_dir, sprintf('solver_Fen_%d.mat', Fen));
     ensure_dir(params.output_dir);
     ensure_dir(params.figure_dir);
+    params.static_equilibrium_result = solve_static_equilibrium(params);
 
     for ib = 1:numel(params.bearing)
         params.bearing(ib).kx = [];
@@ -47,9 +48,9 @@ for iFen = 1:numel(Fen_list)
     [bearingQD{2}, params.bearing(2)] = bearing_quasi_dynamic_roller(params.bearing(2), params); %#ok<AGROW>
     for ib = 1:numel(params.bearing)
         [params.bearing(ib), bearingQD{ib}] = apply_support_compliance_local(params.bearing(ib), bearingQD{ib});
-        params.bearing(ib).operating_offset_x = bearingQD{ib}.operating_offset_x;
-        params.bearing(ib).operating_offset_y = bearingQD{ib}.operating_offset_y;
-        params.bearing(ib).subtract_preload_baseline = true;
+        params.bearing(ib).operating_offset_x = 0;
+        params.bearing(ib).operating_offset_y = 0;
+        params.bearing(ib).subtract_preload_baseline = false;
     end
 
     sim = newmark_newton_multi(params);

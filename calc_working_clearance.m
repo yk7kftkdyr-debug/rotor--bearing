@@ -14,9 +14,11 @@ if nargin < 2
     omega = 0;
 end
 
-c0 = get_field_default(bearing, 'clearance0', 0);
-delta_fit = get_field_default(bearing, 'clearance_fit', get_field_default(bearing, 'delta_fit', 0));
-delta_thermal = get_field_default(bearing, 'clearance_temp', get_field_default(bearing, 'delta_thermal', 0));
+assembly = get_field_default(bearing, 'assembly_state', struct());
+c0 = get_field_default(assembly, 'radial_clearance', get_field_default(bearing, 'clearance0', 0));
+delta_fit = get_field_default(assembly, 'clearance_change_fit', get_field_default(bearing, 'clearance_fit', get_field_default(bearing, 'delta_fit', 0)));
+delta_thermal = get_field_default(assembly, 'clearance_change_thermal', get_field_default(bearing, 'clearance_temp', get_field_default(bearing, 'delta_thermal', 0)));
+initial_interference = get_field_default(assembly, 'initial_interference', 0);
 delta_centrifugal = get_field_default(bearing, 'clearance_centrifugal', get_field_default(bearing, 'delta_centrifugal', 0));
 delta_other = get_field_default(bearing, 'clearance_other', 0);
 
@@ -47,13 +49,14 @@ if ~isfield(bearing, 'delta_centrifugal') && isfield(bearing, 'Dm')
     delta_centrifugal = 2*rho*r^3*omega^2/E;
 end
 
-c_work = c0 + delta_fit + delta_thermal + delta_centrifugal + delta_other;
+c_work = c0 + delta_fit + delta_thermal + delta_centrifugal + delta_other - initial_interference;
 
 clearInfo.c0 = c0;
 clearInfo.delta_fit = delta_fit;
 clearInfo.delta_thermal = delta_thermal;
 clearInfo.delta_centrifugal = delta_centrifugal;
 clearInfo.delta_other = delta_other;
+clearInfo.initial_interference = initial_interference;
 clearInfo.delta_r_inner_thermal = delta_r_inner;
 clearInfo.delta_r_outer_thermal = delta_r_outer;
 clearInfo.T_ref = T_ref;

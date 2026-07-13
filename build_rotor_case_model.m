@@ -81,29 +81,28 @@ MC = zeros(ndC); KC = zeros(ndC);
 
 A = pi/4*(params.shaft_od^2 - params.shaft_id^2);
 I = pi/64*(params.shaft_od^4 - params.shaft_id^4);
-[MR, KR] = assemble_beam_line(MR, KR, node_pos, params.E, I, params.rho, A);
+shaft_mass_rho = get_field_default(params, 'shaft_mass_rho', params.rho);
+[MR, KR] = assemble_beam_line(MR, KR, node_pos, params.E, I, shaft_mass_rho, A);
 
 Ac = pi/4*(params.case_od^2 - params.case_id^2);
 Ic = pi/64*(params.case_od^4 - params.case_id^4);
-[MC, KC] = assemble_beam_line(MC, KC, case_pos, params.case_E, Ic, params.case_rho, Ac);
+case_mass_rho = get_field_default(params, 'case_mass_rho', params.case_rho);
+[MC, KC] = assemble_beam_line(MC, KC, case_pos, params.case_E, Ic, case_mass_rho, Ac);
 
-% Add discs as concentrated mass and rotary inertia.
-for k = 1:numel(params.disc_nodes)
-    nd = params.disc_nodes(k);
-    od = params.disc_od(k);
-    id = params.disc_id(k);
-    th = params.disc_thick(k);
-    md = params.rho*pi/4*(od^2 - id^2)*th;
-    Jd = md/12*(3*((od/2)^2 + (id/2)^2) + th^2);
-    dofs = 4*nd + (-3:0);
-    MR(dofs(1),dofs(1)) = MR(dofs(1),dofs(1)) + md;
-    MR(dofs(2),dofs(2)) = MR(dofs(2),dofs(2)) + md;
-    MR(dofs(3),dofs(3)) = MR(dofs(3),dofs(3)) + Jd;
-    MR(dofs(4),dofs(4)) = MR(dofs(4),dofs(4)) + Jd;
+% Add only the specified translational masses; disk-region beam stiffness is
+% already present in KR and no legacy distributed disk masses are retained.
+if isfield(params, 'concentrated_mass')
+    for k = 1:numel(params.concentrated_mass.nodes)
+        MR = add_translational_mass(MR, params.concentrated_mass.nodes(k), params.concentrated_mass.kg(k));
+    end
+end
+if isfield(params, 'disk_mass')
+    MR = add_translational_mass(MR, params.disk_mass.node, params.disk_mass.kg);
 end
 
-% Ground support for case nodes in the fallback model.
-for i = 1:nC
+% Foundation support acts only at C1 and C13.
+ground_nodes = get_field_default(params, 'case_ground_nodes', [1 nC]);
+for i = ground_nodes
     ix = 4*i - 3;
     iy = 4*i - 2;
     KC(ix,ix) = KC(ix,ix) + params.case_ground_k;
@@ -113,7 +112,7 @@ end
 MM = blkdiag(MR, MC);
 KK = blkdiag(KR, KC);
 CC = params.rayleigh_alpha*MM + params.rayleigh_beta*KK;
-for i = 1:nC
+for i = ground_nodes
     ix = ndR + 4*i - 3;
     iy = ndR + 4*i - 2;
     CC(ix,ix) = CC(ix,ix) + params.case_ground_c;
@@ -136,7 +135,21 @@ modelInfo.case_trans_dof = ndR + reshape([1:4:ndC; 2:4:ndC], [], 1);
 modelInfo.dof_per_node = 4;
 modelInfo.source = 'internal fallback beam model';
 modelInfo.uploaded_model_required = false;
+modelInfo.mass_components.shaft_N = get_field_default(get_field_default(params, 'mass_target', struct()), 'shaft_N', NaN);
+modelInfo.mass_components.concentrated_N = get_field_default(get_field_default(params, 'mass_target', struct()), 'concentrated_N', NaN);
+modelInfo.mass_components.disk_N = get_field_default(get_field_default(params, 'mass_target', struct()), 'disk_N', NaN);
+modelInfo.mass_components.case_N = get_field_default(get_field_default(params, 'mass_target', struct()), 'case_N', NaN);
 
+end
+
+function M = add_translational_mass(M, node, mass)
+if mass < 0, error('Concentrated mass must be nonnegative.'); end
+dofs = 4*node + (-3:-2);
+M(dofs,dofs) = M(dofs,dofs) + mass*eye(2);
+end
+
+function v = get_field_default(s, field, default_value)
+if isfield(s, field) && ~isempty(s.(field)), v = s.(field); else, v = default_value; end
 end
 
 function [M, K] = assemble_beam_line(M, K, x, E, I, rho, A)

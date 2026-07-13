@@ -125,3 +125,11 @@ else
     v = default_value;
 end
 end
+
+function local = bearing_relative_state(q, qd, brg, num_rotor)
+% Relative transverse state: rotor minus casing at the bearing seat.
+irx = 4*brg.rotor_node - 3; iry = irx + 1;
+icx = num_rotor + 4*brg.case_node - 3; icy = icx + 1;
+local.xr = q(irx) - q(icx); local.yr = q(iry) - q(icy);
+local.vxr = qd(irx) - qd(icx); local.vyr = qd(iry) - qd(icy);
+end
