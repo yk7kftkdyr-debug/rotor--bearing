@@ -31,6 +31,7 @@ params.F_ext_z = 0;
 params.static_load.nodes = [params.bearing.rotor_node];
 params.static_load.Fx = cfg.static_load.Fx_N;
 params.static_load.Fy = cfg.static_load.Fy_N;
+params.static_load.Fz = zeros(size(cfg.static_load.Fx_N));
 
 params.use_uploaded_rotor_model = false;
 params.require_uploaded_rotor_model = cfg.require_uploaded_rotor_model;

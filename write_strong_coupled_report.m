@@ -25,12 +25,12 @@ yn1 = zeros(numel(idx_plot), 2*num_rotor_nodes);
 dyn1 = zeros(numel(idx_plot), 2*num_rotor_nodes);
 ddyn1 = zeros(numel(idx_plot), 2*num_rotor_nodes);
 for i = 1:num_rotor_nodes
-    yn1(:,2*i-1) = yn(4*i-3, idx_plot).';
-    yn1(:,2*i) = yn(4*i-2, idx_plot).';
-    dyn1(:,2*i-1) = dyn(4*i-3, idx_plot).';
-    dyn1(:,2*i) = dyn(4*i-2, idx_plot).';
-    ddyn1(:,2*i-1) = ddyn(4*i-3, idx_plot).';
-    ddyn1(:,2*i) = ddyn(4*i-2, idx_plot).';
+    yn1(:,2*i-1) = yn(6*i-5, idx_plot).';
+    yn1(:,2*i) = yn(6*i-4, idx_plot).';
+    dyn1(:,2*i-1) = dyn(6*i-5, idx_plot).';
+    dyn1(:,2*i) = dyn(6*i-4, idx_plot).';
+    ddyn1(:,2*i-1) = ddyn(6*i-5, idx_plot).';
+    ddyn1(:,2*i) = ddyn(6*i-4, idx_plot).';
 end
 F_b1 = F_b_hist(:, idx_plot).';
 
@@ -103,8 +103,8 @@ fprintf(fid,'\n');
 fprintf(fid,'四、转子系统动力学响应输出（最后五个周期）\n');
 for ib = 1:nb
     brg = params.bearing(ib);
-    ix = 4*brg.rotor_node - 3;
-    iy = 4*brg.rotor_node - 2;
+    ix = 6*brg.rotor_node - 5;
+    iy = 6*brg.rotor_node - 4;
     ux = yn(ix, idx_plot);
     uy = yn(iy, idx_plot);
     vx = dyn(ix, idx_plot);

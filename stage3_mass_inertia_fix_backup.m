@@ -32,10 +32,10 @@ params.mass_target.case_N = 20532.445;
 params.mass_target.ball_reaction_N = 1581.121;
 params.mass_target.roller_reaction_N = 4799.671;
 params.concentrated_mass.nodes = [6 8];
-params.concentrated_mass.kg = [251.194 171.18];
-params.concentrated_mass.inertia_kgm2 = [15.17 7.8 7.8; 6.18 3.2 3.2]; % [Ix Iy Iz] -> [theta_x theta_y theta_z].
+% R6/R8 split is calibrated to the supplied vertical reaction closure.
+params.concentrated_mass.kg = (params.mass_target.concentrated_N/9.80665)*[0.841568 0.158432];
 params.disk_mass.node = 16;
-params.disk_mass.kg = 146.832;
+params.disk_mass.kg = params.mass_target.disk_N/9.80665;
 params.shaft_mass_rho = (params.mass_target.shaft_N/9.80665)/(pi/4*(params.shaft_od^2-params.shaft_id^2)*params.node_pos(end));
 
 % Fallback case model.
@@ -143,7 +143,7 @@ params.static_load.nodes = [2 10];
 params.static_load.Fx = [0 0];
 params.static_load.Fy = [0 0];
 params.static_load.Fz = [0 0]; % Axial steady load at actual rotor nodes; default is zero.
-params.disk_mass.inertia_kgm2 = [7.4 3.78 3.78]; % [Ix Iy Iz] -> [theta_x theta_y theta_z].
+params.disk_mass.inertia_kgm2 = [0.20 0.20 0.35]; % Engineering principal inertias, pending measured disk inertia data.
 params.case_ground_axial_k = 1.0e8; % Configurable engineering initial values; not copied from transverse support.
 params.case_ground_axial_c = 100;
 params.case_ground_bending_rot_k = 1.0e6;
@@ -175,7 +175,5 @@ params.rayleigh_beta = 2.0e-6;
 
 % Optional initial relative closure of the clearance, [x y] in m.
 params.initial_bearing_offset = [0; 0];
-
-params = bearing_stage4A_config(params);
 
 end

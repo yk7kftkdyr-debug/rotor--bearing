@@ -92,6 +92,8 @@ params.F_ext_z = 0;
 params.static_load.nodes = [params.bearing.rotor_node];
 params.static_load.Fx = [0 0];
 params.static_load.Fy = [0 0];
+params.static_load.Fz = [0 0];
+params.bearing_model_stage = '2D_force_on_6DOF_structure';
 
 % Working-clearance components. Baseline keeps measured/nominal values.
 % thermal_fit_centrifugal can be enabled when measured temperatures and

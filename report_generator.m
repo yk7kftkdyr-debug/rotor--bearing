@@ -483,12 +483,12 @@ b = params.bearing(ib);
 idx = post.idx_plot;
 t = sim.time(idx);
 rn = b.rotor_node;
-x = sim.yn(4*rn-3,idx);
-y = sim.yn(4*rn-2,idx);
-vx = sim.dyn(4*rn-3,idx);
-vy = sim.dyn(4*rn-2,idx);
-ax = sim.ddyn(4*rn-3,idx);
-ay = sim.ddyn(4*rn-2,idx);
+x = sim.yn(6*rn-5,idx);
+y = sim.yn(6*rn-4,idx);
+vx = sim.dyn(6*rn-5,idx);
+vy = sim.dyn(6*rn-4,idx);
+ax = sim.ddyn(6*rn-5,idx);
+ay = sim.ddyn(6*rn-4,idx);
 Fx = sim.F_b_hist(2*ib-1,idx);
 Fy = sim.F_b_hist(2*ib,idx);
 Fmag = sqrt(Fx.^2 + Fy.^2);
@@ -688,8 +688,8 @@ for ib = 1:numel(params.bearing)
         fprintf(fid, '    bearing %d WARNING: displacement exceeds working clearance; strong nonlinear contact or parameter issue may exist.\n', ib);
     end
 
-    x = sim.yn(4*b.rotor_node-3, post.idx_plot);
-    y = sim.yn(4*b.rotor_node-2, post.idx_plot);
+    x = sim.yn(6*b.rotor_node-5, post.idx_plot);
+    y = sim.yn(6*b.rotor_node-4, post.idx_plot);
     t = sim.time(post.idx_plot);
     X1 = max(first_harmonic_amplitude(t, x, fr), first_harmonic_amplitude(t, y, fr));
     v_est = 2*pi*fr*X1;

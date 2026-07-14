@@ -23,8 +23,8 @@ post.bearing = struct([]);
 
 for ib = 1:nb
     b = params.bearing(ib);
-    ix = 4*b.rotor_node - 3;
-    iy = 4*b.rotor_node - 2;
+    ix = 6*b.rotor_node - 5;
+    iy = 6*b.rotor_node - 4;
 
     x = sim.yn(ix, idx);
     y = sim.yn(iy, idx);
@@ -477,9 +477,9 @@ for k = 1:numel(idx)
         rn = params.bearing(ib).rotor_node;
         ii = idx(k);
         fprintf(fid, ',%.12e,%.12e,%.12e,%.12e,%.12e,%.12e,%.12e,%.12e', ...
-            sim.yn(4*rn-3,ii), sim.yn(4*rn-2,ii), ...
-            sim.dyn(4*rn-3,ii), sim.dyn(4*rn-2,ii), ...
-            sim.ddyn(4*rn-3,ii), sim.ddyn(4*rn-2,ii), ...
+            sim.yn(6*rn-5,ii), sim.yn(6*rn-4,ii), ...
+            sim.dyn(6*rn-5,ii), sim.dyn(6*rn-4,ii), ...
+            sim.ddyn(6*rn-5,ii), sim.ddyn(6*rn-4,ii), ...
             sim.F_b_hist(2*ib-1,ii), sim.F_b_hist(2*ib,ii));
     end
     fprintf(fid, '\n');

@@ -176,6 +176,4 @@ params.rayleigh_beta = 2.0e-6;
 % Optional initial relative closure of the clearance, [x y] in m.
 params.initial_bearing_offset = [0; 0];
 
-params = bearing_stage4A_config(params);
-
 end

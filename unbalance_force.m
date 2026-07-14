@@ -24,8 +24,8 @@ for k = 1:numel(unbalance.nodes)
     ecc = unbalance.ecc_mm(k)*1e-3;
     phase = unbalance.phase(k);
     F0 = me*ecc*omega^2;
-    ix = 4*nd - 3;
-    iy = 4*nd - 2;
+    ix = 6*nd - 5;
+    iy = 6*nd - 4;
     Fu_global(ix) = Fu_global(ix) + F0*cos(omega*t + phase);
     Fu_global(iy) = Fu_global(iy) + F0*sin(omega*t + phase);
 end

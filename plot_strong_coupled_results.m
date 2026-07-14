@@ -84,10 +84,10 @@ end
 end
 
 function [x, y] = relative_xy(history, brg, modelInfo)
-irx = 4*brg.rotor_node - 3;
-iry = 4*brg.rotor_node - 2;
-icx = modelInfo.num_rotor_dof + 4*brg.case_node - 3;
-icy = modelInfo.num_rotor_dof + 4*brg.case_node - 2;
+irx = 6*brg.rotor_node - 5;
+iry = 6*brg.rotor_node - 4;
+icx = modelInfo.num_rotor_dof + 6*brg.case_node - 5;
+icy = modelInfo.num_rotor_dof + 6*brg.case_node - 4;
 x = history(irx,:) - history(icx,:);
 y = history(iry,:) - history(icy,:);
 end

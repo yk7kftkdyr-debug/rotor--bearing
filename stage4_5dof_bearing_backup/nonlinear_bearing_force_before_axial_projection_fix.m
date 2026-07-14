@@ -148,7 +148,7 @@ end
 function [f,state] = stage4a_ball_force(local,b,~,t)
 n=b.n; theta=2*pi*(0:n-1)/n; r=local.r; a0=b.assembly.contact_angle0; a=max(1*pi/180,min(b.assembly.contact_angle_max,a0+r(3)/max(b.Dm/2,eps))); c=b.assembly.radial_clearance; z=b.stage4A_width_m/2; Q=zeros(1,n); delta=zeros(1,n); f=zeros(5,1);
 for j=1:n
-    cj=cos(theta(j)); sj=sin(theta(j)); x_contact=r(1)+z*r(5); y_contact=r(2)-z*r(4); delta(j)=x_contact*cj+y_contact*sj+(r(3)+b.assembly.preload_displacement)*sin(a)-c;
+    cj=cos(theta(j)); sj=sin(theta(j)); radial=r(1)*cj+r(2)*sj+z*(r(5)*cj-r(4)*sj); delta(j)=radial*cos(a)+(r(3)+b.assembly.preload_displacement)*sin(a)-c;
     if delta(j)>0
         Q(j)=b.K_point*delta(j)^(3/2); fj=-Q(j)*[cos(a)*cj;cos(a)*sj;sin(a)]; f(1:3)=f(1:3)+fj; f(4)=f(4)-z*fj(2); f(5)=f(5)+z*fj(1);
     end

@@ -27,9 +27,11 @@ assert(isfield(params, 'reference_ball_reaction') && isfield(params, 'reference_
     '%s: stage 1 must retain the 20/80 kN values only as explicitly labelled result references.', context);
 
 if isfield(params, 'static_load') && ~isempty(params.static_load)
+    if ~isfield(params.static_load, 'Fz'), params.static_load.Fz = zeros(size(params.static_load.Fx)); end
     assert(numel(params.static_load.nodes) == numel(params.static_load.Fx) && ...
-        numel(params.static_load.nodes) == numel(params.static_load.Fy), ...
-        '%s: each physical steady-load node requires one Fx and one Fy value.', context);
+        numel(params.static_load.nodes) == numel(params.static_load.Fy) && ...
+        numel(params.static_load.nodes) == numel(params.static_load.Fz), ...
+        '%s: each physical steady-load node requires one Fx, Fy and Fz value.', context);
 end
 
 if isfield(params, 'require_uploaded_rotor_model') && params.require_uploaded_rotor_model

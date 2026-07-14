@@ -40,12 +40,12 @@ fr = result.params.rpm/60;
 
 for ib = 1:numel(result.params.bearing)
     rn = result.params.bearing(ib).rotor_node;
-    x = result.yn(4*rn-3, idx);
-    y = result.yn(4*rn-2, idx);
-    vx = result.dyn(4*rn-3, idx);
-    vy = result.dyn(4*rn-2, idx);
-    ax = result.ddyn(4*rn-3, idx);
-    ay = result.ddyn(4*rn-2, idx);
+    x = result.yn(6*rn-5, idx);
+    y = result.yn(6*rn-4, idx);
+    vx = result.dyn(6*rn-5, idx);
+    vy = result.dyn(6*rn-4, idx);
+    ax = result.ddyn(6*rn-5, idx);
+    ay = result.ddyn(6*rn-4, idx);
     Fx = result.F_b_hist(2*ib-1, idx);
     Fy = result.F_b_hist(2*ib, idx);
 
