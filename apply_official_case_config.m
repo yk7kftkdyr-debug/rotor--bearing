@@ -1,7 +1,6 @@
 function params = apply_official_case_config(params, varargin)
 %APPLY_OFFICIAL_CASE_CONFIG Apply the official baseline case consistently.
-% Assembly geometry and external steady loads are separate. Reference
-% reactions are retained only for comparison with the reconstructed state.
+% Assembly geometry and external steady loads are separate.
 
 preserve_output_paths = false;
 if nargin >= 2 && isstruct(varargin{1})
@@ -15,8 +14,6 @@ params = enforce_bearing_layout(params);
 params.case_definition.name = 'stage1_static_equilibrium_ball_roller';
 params.case_definition.assembly_application = cfg.assembly.description;
 params.case_definition.static_load_application = cfg.static_load.description;
-params.reference_ball_reaction = cfg.reference_ball_reaction;
-params.reference_roller_reaction = cfg.reference_roller_reaction;
 
 for ib = 1:numel(params.bearing)
     params.bearing(ib).preload_y = 0;

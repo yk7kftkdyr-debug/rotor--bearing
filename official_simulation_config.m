@@ -13,8 +13,6 @@ cfg.require_uploaded_rotor_model = false; % The checked-in 17-node fallback is t
 
 cfg.layout = bearing_layout_config();
 
-cfg.reference_ball_reaction = 20e3; % Result comparison only; never used in calculation.
-cfg.reference_roller_reaction = 80e3; % Result comparison only; never used in calculation.
 cfg.assembly.description = 'Assembly state establishes contact geometry only; radial reactions come from static equilibrium.';
 
 cfg.static_load.description = 'steady loads act only on their declared physical rotor nodes.';

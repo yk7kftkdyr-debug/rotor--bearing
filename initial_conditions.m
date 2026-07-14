@@ -205,7 +205,7 @@ for i = 1:numel(params.bearing)
     params.bearing(i).waviness.order = get_field_default(params.bearing(i), 'waviness_order', 1);
 end
 
-% Apply the stage-1 configuration: 20/80 kN are comparison references only.
+% Apply the Stage-1 configuration with assembly and external-load inputs separated.
 params = apply_official_case_config(params);
 
 function phase = apply_unbalance_phase_mode(unbalance)

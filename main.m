@@ -25,13 +25,12 @@ staticEq = solve_static_equilibrium(params);
 params.static_equilibrium_result = staticEq;
 fprintf('Static work point: R/Fref=%.3e, ball Fr=%.3f N, roller Fr=%.3f N, vertical balance error=%.3e N\n', ...
     staticEq.normalized_residual, staticEq.bearing(1).Fr, staticEq.bearing(2).Fr, staticEq.force_balance_error_vertical);
-fprintf('  Front ball Fx/Fy = %.3f / %.3f N; Fr-reference difference = %.3f N\n', ...
-    staticEq.bearing(1).Fx, staticEq.bearing(1).Fy, staticEq.bearing(1).Fr - params.reference_ball_reaction);
-fprintf('  Rear roller Fx/Fy = %.3f / %.3f N; Fr-reference difference = %.3f N\n', ...
-    staticEq.bearing(2).Fx, staticEq.bearing(2).Fy, staticEq.bearing(2).Fr - params.reference_roller_reaction);
+fprintf('  Front ball Fx/Fy/Fr = %.3f / %.3f / %.3f N\n', ...
+    staticEq.bearing(1).Fx, staticEq.bearing(1).Fy, staticEq.bearing(1).Fr);
+fprintf('  Rear roller Fx/Fy/Fr = %.3f / %.3f / %.3f N\n', ...
+    staticEq.bearing(2).Fx, staticEq.bearing(2).Fy, staticEq.bearing(2).Fr);
 
-% 2) Existing quasi-dynamic module remains available; prescribed 20/80 kN
-% reactions no longer enter its closure or the rotor equation.
+% 2) Existing quasi-dynamic module remains available without prescribed bearing reactions.
 for ib = 1:numel(params.bearing)
     params.bearing(ib).kx = [];
     params.bearing(ib).ky = [];

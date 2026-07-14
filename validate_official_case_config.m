@@ -22,9 +22,7 @@ assert(params.bearing(2).rotor_node == layout.bearing2.rotor_node && ...
 
 tol = 1e-9;
 actual_preload = [params.bearing(1).preload_z params.bearing(2).preload_z];
-assert(all(abs(actual_preload) <= tol), '%s: prescribed 20/80 kN bearing loads are disabled in stage 1.', context);
-assert(isfield(params, 'reference_ball_reaction') && isfield(params, 'reference_roller_reaction'), ...
-    '%s: stage 1 must retain the 20/80 kN values only as explicitly labelled result references.', context);
+assert(all(abs(actual_preload) <= tol), '%s: prescribed bearing loads are disabled.', context);
 
 if isfield(params, 'static_load') && ~isempty(params.static_load)
     if ~isfield(params.static_load, 'Fz'), params.static_load.Fz = zeros(size(params.static_load.Fx)); end
