@@ -40,9 +40,12 @@ for ib = 1:nb
     if isfield(params,'stage4A') && get_field_default(params.stage4A,'enable',false)
         contact_base = build_base_contact_state(local, brg, t);
         operating_state = struct('time', t, 'bearing_index', ib);
+        operating_state.evaluate_raw_contact = ...
+            @(contact_trial) evaluate_raw_contact(contact_trial, local, brg, t);
         [contact_mod, micro_state] = apply_microphysics(contact_base, operating_state, struct(), micro_cfg);
-        [f5, state] = solve_contact_force(contact_mod);
+        [f5, state] = solve_contact_force(contact_mod, operating_state);
         state = stage4a_normalize_state(state);
+        state.raw_contact = operating_state.evaluate_raw_contact(contact_mod);
         state.microphysics_state = micro_state;
         Fb_global = assemble_bearing_force(Fb_global, f5, brg.rotor_node, brg.case_node, num_rotor);
         state.Fx=f5(1); state.Fy=f5(2); state.Fz=f5(3); state.Mx=f5(4); state.My=f5(5); state.r=local.r; state.rdot=local.rdot; state.rotor_node=brg.rotor_node; state.case_node=brg.case_node; state.name=brg.name; state.bearing_model_stage='5DOF_static_interface';
@@ -108,9 +111,21 @@ contact_base = struct('local', local, 'brg', brg, 'time', t, ...
     'contact_damping', [], 'characteristic_displacement', []);
 end
 
-function [f5, state] = solve_contact_force(contact_mod)
-%SOLVE_CONTACT_FORCE Evaluate the unchanged local Stage4A contact law.
-[f5, state] = stage4a_bearing_force(contact_mod.local, contact_mod.brg, [], contact_mod.time);
+function [f5, state] = solve_contact_force(contact_mod, operating_state)
+%SOLVE_CONTACT_FORCE Extract force and state from the one raw contact kernel.
+result = operating_state.evaluate_raw_contact(contact_mod);
+f5 = result.f5;
+state = result.state;
+end
+
+function result = evaluate_raw_contact(contact_trial, local, brg, t)
+[f5, state] = stage4a_bearing_force(local, brg, [], t);
+result = struct('f5', f5, 'Q', state.Q, 'delta', state.delta, ...
+    'delta_raw', state.delta_raw, 'loaded', state.Q > 0, ...
+    'loaded_count', state.loaded_count, 'element_angle', state.theta, ...
+    'contact_angle', state.contact_angle, 'normal_direction', [], ...
+    'contact_position', [], 'slice_z', [], 'state', state);
+if isfield(state, 'slice_z'), result.slice_z = state.slice_z; end
 end
 
 function value = contact_stiffness_value(brg)

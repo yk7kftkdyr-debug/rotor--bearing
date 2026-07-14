@@ -10,13 +10,13 @@ end
 micro_state = initialize_microphysics_state(micro_state);
 contact_mod = contact_base;
 
-contact_mod = run_module(contact_mod, operating_state, micro_state, cfg.thermal, ...
+ [contact_mod, micro_state.temperature] = run_module(contact_mod, operating_state, micro_state, cfg.thermal, ...
     'thermal', {'viscosity', 'pressure_viscosity', 'working_clearance', ...
-    'film_thickness', 'contact_stiffness'});
-contact_mod = run_module(contact_mod, operating_state, micro_state, cfg.roughness, ...
+    'film_thickness'});
+[contact_mod, micro_state.roughness_phase] = run_module(contact_mod, operating_state, micro_state, cfg.roughness, ...
     'roughness', {'surface_height', 'effective_deformation', ...
     'asperity_contact_ratio', 'contact_stiffness', 'contact_damping'});
-contact_mod = run_module(contact_mod, operating_state, micro_state, cfg.impurity, ...
+[contact_mod, micro_state.impurity_state] = run_module(contact_mod, operating_state, micro_state, cfg.impurity, ...
     'impurity', {'characteristic_displacement', 'effective_deformation', ...
     'contact_stiffness'});
 end
@@ -33,8 +33,9 @@ if isempty(state.history)
 end
 end
 
-function output = run_module(input, operating_state, micro_state, module_cfg, name, allowed)
+function [output, module_state] = run_module(input, operating_state, micro_state, module_cfg, name, allowed)
 output = input;
+module_state = struct('enabled', false, 'mode', 'transparent');
 if ~module_cfg.enabled
     return;
 end
@@ -44,11 +45,11 @@ addpath(module_path);
 before = output;
 switch name
     case 'thermal'
-        output = apply_thermal_microphysics(output, operating_state, micro_state, module_cfg);
+        [output, module_state] = apply_thermal_microphysics(output, operating_state, micro_state, module_cfg);
     case 'roughness'
-        output = apply_roughness_microphysics(output, operating_state, micro_state, module_cfg);
+        [output, module_state] = apply_roughness_microphysics(output, operating_state, micro_state, module_cfg);
     case 'impurity'
-        output = apply_impurity_microphysics(output, operating_state, micro_state, module_cfg);
+        [output, module_state] = apply_impurity_microphysics(output, operating_state, micro_state, module_cfg);
 end
 assert_only_allowed_contact_changes(before, output, allowed, name);
 end

@@ -3,7 +3,8 @@ Stage4-B1 microphysics interface validation
 switches: thermal=0 roughness=0 impurity=0
 B0: max|u|=0.0000000000000000e+00 max|DeltaFb|=0.0000000000000000e+00 max|Bu|=0.0000000000000000e+00 strict_zero_pass=1
 B1 regression: frozen validation-only F_bearing shim -> nonlinear_bearing_force_stage4B1_frozen; production F_bearing -> nonlinear_bearing_force -> build_base_contact_state -> apply_microphysics -> solve_contact_force.
-frozen chain F_bearing resolved to: /Users/bailingguan/Documents/Codex/2026-07-14/stage4-b1-newmark-kkt-1-bearing/work/rotor-bearing/bearing_microphysics/validation/frozen_chain/F_bearing.m
+frozen chain F_bearing resolved to: /Users/bailingguan/Documents/Codex/2026-07-14/di/work/rotor-bearing/bearing_microphysics/validation/frozen_chain/F_bearing.m
+production nonlinear_bearing_force resolved to: /Users/bailingguan/Documents/Codex/2026-07-14/di/work/rotor-bearing/nonlinear_bearing_force.m
 B1 tolerance: abs(new-frozen) <= 1.0e-12 + 1.0e-10*abs(frozen); fallback relative 1.0e-08 used=0
 u: max_abs=0.0000000000000000e+00 max_rel=0.0000000000000000e+00 max_allowed=1.0000103223305855e-12 pass=1
 v: max_abs=0.0000000000000000e+00 max_rel=0.0000000000000000e+00 max_allowed=1.0042064016654425e-12 pass=1
@@ -16,7 +17,7 @@ Newton iteration history: max_abs=0.0000000000000000e+00 max_rel=0.0000000000000
 unconverged-step difference=0
 B1 pass=1 (64 steps are interface regression only, not time-step convergence validation)
 module boundary pass=1
-thermal allowed fields: viscosity, pressure_viscosity, working_clearance, film_thickness, contact_stiffness
+thermal allowed fields: viscosity, pressure_viscosity, working_clearance, film_thickness
 roughness allowed fields: surface_height, effective_deformation, asperity_contact_ratio, contact_stiffness, contact_damping
 impurity allowed fields: characteristic_displacement, effective_deformation, contact_stiffness
 protected files: newmark_newton_multi.m; static KKT logic; structural M/C/K construction; assemble_bearing_force.m

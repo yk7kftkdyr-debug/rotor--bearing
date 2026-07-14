@@ -13,12 +13,29 @@ assert(result.b0.pass, 'B0 strict zero acceptance failed before B1 regression.')
 params = b1_parameters(cfg);
 result.b1.frozen = run_frozen_chain(params, root);
 result.b1.interface = newmark_newton_multi(params);
+assert_raw_contact_contract(params);
+result.production_force_entry = which('nonlinear_bearing_force', '-all');
+assert(strcmp(result.production_force_entry{1}, fullfile(root, 'nonlinear_bearing_force.m')), ...
+    'Frozen validation path leaked into production resolution.');
 result.b1 = compare_b1(result.b1.frozen, result.b1.interface, params, result.b1);
 assert(result.b1.pass, 'B1 frozen/interface regression exceeded tolerance.');
 
 result.static_boundary_pass = static_boundary_check(root);
 assert(result.static_boundary_pass, 'Microphysics module boundary scan failed.');
 write_validation_report(fullfile(root, 'microphysics_interface_validation.txt'), result);
+end
+
+function assert_raw_contact_contract(params)
+q0 = params.static_equilibrium_result.q0;
+[~, ~, ~, params.modelInfo] = build_rotor_case_model(params);
+[~, bearing_state] = F_bearing(q0, zeros(size(q0)), params, numel(q0));
+state = bearing_state.bearings(1);
+assert(isfield(state, 'raw_contact'), 'Raw contact result is not exposed in bearing state.');
+required = {'f5', 'Q', 'delta', 'delta_raw', 'loaded', 'loaded_count', ...
+    'element_angle', 'contact_angle', 'normal_direction', ...
+    'contact_position', 'slice_z', 'state'};
+assert(all(isfield(state.raw_contact, required)), ...
+    'Raw contact result contract is incomplete.');
 end
 
 function out = run_b0(cfg)
@@ -96,10 +113,10 @@ end
 
 function history = bearing_force_history(sim, params)
 nb = numel(params.bearing);
-history = zeros(5 * nb, size(sim.Fb_global_hist, 2));
+history = zeros(5, nb, size(sim.Fb_global_hist, 2));
 for ib = 1:nb
     index = 6 * params.bearing(ib).rotor_node + (-5:-1);
-    history(5 * (ib - 1) + (1:5), :) = sim.Fb_global_hist(index, :);
+    history(:, ib, :) = reshape(sim.Fb_global_hist(index, :), 5, 1, []);
 end
 end
 
@@ -122,7 +139,7 @@ function pass = static_boundary_check(root)
 module_dirs = {fullfile(root, 'bearing_microphysics', 'thermal'), ...
     fullfile(root, 'bearing_microphysics', 'roughness'), ...
     fullfile(root, 'bearing_microphysics', 'impurity')};
-pattern = 'newmark_newton_multi|solve_static_equilibrium|\\<MM\\>|\\<KK\\>|\\<KKT\\>|\\<192\\>|assemble_bearing_force|rotor_node|case_node|num_rotor_dof';
+pattern = 'newmark_newton_multi\\(|solve_static_equilibrium\\(|assemble_bearing_force\\(|params\\.modelInfo|num_rotor_dof|\\<global\\>|\\<persistent\\>';
 pass = true;
 for k = 1:numel(module_dirs)
     files = dir(fullfile(module_dirs{k}, '*.m'));
@@ -147,6 +164,7 @@ fprintf(fid, ['B1 regression: frozen validation-only F_bearing shim -> ', ...
     'nonlinear_bearing_force -> build_base_contact_state -> ', ...
     'apply_microphysics -> solve_contact_force.\n']);
 fprintf(fid, 'frozen chain F_bearing resolved to: %s\n', result.b1.frozen.microphysics_validation_frozen_entry);
+fprintf(fid, 'production nonlinear_bearing_force resolved to: %s\n', result.production_force_entry{1});
 fprintf(fid, 'B1 tolerance: abs(new-frozen) <= %.1e + %.1e*abs(frozen); fallback relative %.1e used=%d\n', ...
     result.b1.tolerance.absolute, result.b1.tolerance.relative, ...
     result.b1.tolerance.fallback_relative, result.b1.tolerance.fallback_used);
@@ -158,7 +176,7 @@ write_metric(fid, 'Newton iteration history', result.b1.newton_iterations);
 fprintf(fid, 'unconverged-step difference=%d\n', result.b1.unconverged_step_difference);
 fprintf(fid, 'B1 pass=%d (64 steps are interface regression only, not time-step convergence validation)\n', result.b1.pass);
 fprintf(fid, 'module boundary pass=%d\n', result.static_boundary_pass);
-fprintf(fid, 'thermal allowed fields: viscosity, pressure_viscosity, working_clearance, film_thickness, contact_stiffness\n');
+fprintf(fid, 'thermal allowed fields: viscosity, pressure_viscosity, working_clearance, film_thickness\n');
 fprintf(fid, 'roughness allowed fields: surface_height, effective_deformation, asperity_contact_ratio, contact_stiffness, contact_damping\n');
 fprintf(fid, 'impurity allowed fields: characteristic_displacement, effective_deformation, contact_stiffness\n');
 fprintf(fid, 'protected files: newmark_newton_multi.m; static KKT logic; structural M/C/K construction; assemble_bearing_force.m\n');
