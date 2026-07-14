@@ -1,4 +1,4 @@
-function [Fb_global, bearingState] = nonlinear_bearing_force(q, qd, params, bearing, MM_size)
+function [Fb_global, bearingState] = nonlinear_bearing_force_stage4B1_frozen(q, qd, params, bearing, MM_size)
 %NONLINEAR_BEARING_FORCE Real-time nonlinear bearing force assembly.
 % Inputs:
 %   q, qd   - current global displacement and velocity.
@@ -29,7 +29,6 @@ model_case = 'full_tribology';
 if isfield(params, 'model_case') && ~isempty(params.model_case)
     model_case = lower(params.model_case);
 end
-micro_cfg = microphysics_config(get_field_default(params, 'microphysics', struct()));
 
 for ib = 1:nb
     brg = bearing(ib);
@@ -38,12 +37,8 @@ for ib = 1:nb
     end
     local = bearing_relative_state(q, qd, brg, num_rotor);
     if isfield(params,'stage4A') && get_field_default(params.stage4A,'enable',false)
-        contact_base = build_base_contact_state(local, brg, t);
-        operating_state = struct('time', t, 'bearing_index', ib);
-        [contact_mod, micro_state] = apply_microphysics(contact_base, operating_state, struct(), micro_cfg);
-        [f5, state] = solve_contact_force(contact_mod);
+        [f5, state] = stage4a_bearing_force(local, brg, params, t);
         state = stage4a_normalize_state(state);
-        state.microphysics_state = micro_state;
         Fb_global = assemble_bearing_force(Fb_global, f5, brg.rotor_node, brg.case_node, num_rotor);
         state.Fx=f5(1); state.Fy=f5(2); state.Fz=f5(3); state.Mx=f5(4); state.My=f5(5); state.r=local.r; state.rdot=local.rdot; state.rotor_node=brg.rotor_node; state.case_node=brg.case_node; state.name=brg.name; state.bearing_model_stage='5DOF_static_interface';
         if ib == 1, bearingState.bearings=state; else, bearingState.bearings(ib)=state; end
@@ -95,30 +90,6 @@ for ib = 1:nb
     end
 end
 
-end
-
-function contact_base = build_base_contact_state(local, brg, t)
-%BUILD_BASE_CONTACT_STATE Local-only contact record for microphysics modules.
-contact_base = struct('local', local, 'brg', brg, 'time', t, ...
-    'viscosity', [], 'pressure_viscosity', [], ...
-    'working_clearance', get_field_default(brg.assembly, 'radial_clearance', 0), ...
-    'film_thickness', [], 'surface_height', [], ...
-    'effective_deformation', [], 'asperity_contact_ratio', [], ...
-    'contact_stiffness', contact_stiffness_value(brg), ...
-    'contact_damping', [], 'characteristic_displacement', []);
-end
-
-function [f5, state] = solve_contact_force(contact_mod)
-%SOLVE_CONTACT_FORCE Evaluate the unchanged local Stage4A contact law.
-[f5, state] = stage4a_bearing_force(contact_mod.local, contact_mod.brg, [], contact_mod.time);
-end
-
-function value = contact_stiffness_value(brg)
-if strcmpi(brg.type, 'ball')
-    value = get_field_default(brg, 'K_point', 0);
-else
-    value = get_field_default(brg, 'K_line', 0);
-end
 end
 
 function [Fx, Fy, state] = bearing_force_by_type(xr, yr, vxr, vyr, brg, omega, t)
