@@ -15,6 +15,7 @@
 - `thermal.enabled`, `roughness.enabled`, and `impurity.enabled` default to `false`.
 - No physical microphysics model and no batch result study.
 - Validate one B0 check, then one 64-step Stage4-B1 transverse harmonic regression.
+- B0 remains strict zero; B1 accepts `abs(new-frozen) <= 1e-12 + 1e-10*abs(frozen)` elementwise, with relative tolerance `1e-8` only when a documented evaluation-order difference requires it.
 - Pass only local contact data to microphysics modules.
 
 ---
@@ -27,9 +28,9 @@
 
 **Interfaces:**
 - Consumes: current `nonlinear_bearing_force(q, qd, params, bearing, MM_size)` behavior.
-- Produces: a frozen baseline callable and a test that requires `microphysics_config` and `apply_microphysics`.
+- Produces: a frozen baseline callable and a test that requires `microphysics_config` and `apply_microphysics`.  The frozen callable is reached only by validation-time function resolution, never the ordinary search path.
 
-- [ ] **Step 1: Copy the current entry into the named frozen baseline file and rename its top-level function.**
+- [ ] **Step 1: Copy the current entry into the named frozen baseline file and rename its top-level function; create a validation-only `F_bearing.m` shim that resolves it, so a separate Newmark run exercises the frozen chain.**
 - [ ] **Step 2: Write the failing test requiring all switches false, initialized state fields, and an unchanged contact struct.**
 
 ```matlab
@@ -73,7 +74,7 @@ assert(all(isfield(state, {'temperature','roughness_phase','impurity_state','his
 - Consumes: existing Stage4A local kinematics and bearing parameters.
 - Produces: `build_base_contact_state`, `solve_contact_force`, and a single `apply_microphysics` invocation on each local contact evaluation.
 
-- [ ] **Step 1: Extend the failing test to require that `nonlinear_bearing_force.m` contains one gateway invocation and no microphysics module references to Newmark/KKT/M/C/K.**
+- [ ] **Step 1: Extend the failing test to require that `nonlinear_bearing_force.m` contains one gateway invocation and that the microphysics directory contains none of `newmark_newton_multi`, `solve_static_equilibrium`, `MM`, `KK`, `KKT`, `192`, global node/DOF indexing, or `assemble_bearing_force`; allow local fields such as `contact_stiffness`.**
 - [ ] **Step 2: Verify the structural scan fails before integration.**
 - [ ] **Step 3: Extract the existing Stage4A ball/roller local calculation into side-effect-free contact-record construction and force solution helpers.**
 - [ ] **Step 4: Add the single gateway call between those helpers, forwarding only local state and `params.microphysics` configuration.**
@@ -90,10 +91,10 @@ assert(all(isfield(state, {'temperature','roughness_phase','impurity_state','his
 - Consumes: frozen baseline, interface implementation, `initial_conditions`, `newmark_newton_multi`.
 - Produces: validation record with switches, B0 status, B1 full-history errors, call path, allow-lists, and protected files.
 
-- [ ] **Step 1: Write a failing validation test that calls B0 first and requires zero maximum error for the 64-step transverse B1 displacement and bearing-force histories.**
+- [ ] **Step 1: Write a failing validation test that calls B0 first and requires B0 exact zero plus elementwise B1 tolerance `1e-12 + 1e-10*abs(frozen)` for full `u`, `v`, `a`, and both bearings' five-component force histories.**
 - [ ] **Step 2: Run it and observe failure because the validator does not exist.**
-- [ ] **Step 3: Implement B0 followed by exactly one frozen and one interface 64-step B1 transverse simulation.**
-- [ ] **Step 4: Generate `microphysics_interface_validation.txt` from measured values and static boundary checks.**
+- [ ] **Step 3: Implement B0 followed by exactly one frozen-chain and one interface-chain 64-step B1 transverse simulation.**
+- [ ] **Step 4: Generate `microphysics_interface_validation.txt` from measured values and static boundary checks, including B0 `max|u|`, `max|DeltaFb|`, `max|Bu|`; B1 `u/v/a` and each bearing's `[Fx,Fy,Fz,Mx,My]` histories; contact-body counts; `K_b/C_b`; Newton iterations and unconverged-step differences; false switch states; and the statement that 64 steps is not a time-step convergence test.**
 - [ ] **Step 5: Run the complete validator and inspect the generated report.**
 - [ ] **Step 6: Commit all interface code, validator, report, and test.**
 
@@ -104,5 +105,5 @@ assert(all(isfield(state, {'temperature','roughness_phase','impurity_state','his
 
 - [ ] **Step 1: Run `checkcode` across each changed MATLAB file.**
 - [ ] **Step 2: Run the complete microphysics interface validation from a clean MATLAB process.**
-- [ ] **Step 3: Inspect `git diff --check`, `git status`, and confirm protected files are unmodified.**
+- [ ] **Step 3: Inspect `git diff --check`, `git status`, and confirm `newmark_newton_multi.m`, static KKT logic, structural matrix construction, and global assembly files are unmodified.**
 - [ ] **Step 4: Commit with message `feat: add microphysics interface baseline`.**

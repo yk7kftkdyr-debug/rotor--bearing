@@ -16,7 +16,9 @@ implementation exactly.
 - Do not enable a thermal, roughness, or impurity constitutive model, and do
   not run a batch study.
 - Retain a frozen copy of the pre-interface `nonlinear_bearing_force.m` for
-  regression comparison.
+  regression comparison.  It is callable only through a validation-specific
+  function-resolution path, so Newmark separately exercises frozen and new
+  implementations; it is never on the ordinary production search path.
 
 ## Architecture
 
@@ -65,11 +67,18 @@ existing assembly path.
 2. Run one 64-step transverse Stage4-B1 harmonic simulation on the frozen
    implementation and once on the interface implementation with all switches
    false.
-3. Compare complete displacement and bearing-force histories by maximum
-   absolute error.  The acceptance threshold is exactly zero, excluding only
-   fields intentionally added for microphysics state reporting.
-4. Staticaly check that no module references Newmark, KKT, 192-DOF, or global
-   M/C/K symbols.
+3. Compare complete `u`, `v`, and `a` histories, both bearings' five-component
+   force histories, contact-body counts, local `K_b`/`C_b`, Newton iterations,
+   and unconverged-step counts.  B0 must remain exactly zero.  B1 uses
+   `abs(new-frozen) <= 1e-12 + 1e-10*abs(frozen)` elementwise; only if a
+   documented ordering difference remains may the relative term be relaxed to
+   `1e-8`.
+4. Statically check the microphysics directory for these forbidden tokens only:
+   `newmark_newton_multi`, `solve_static_equilibrium`, `MM`, `KK`, `KKT`,
+   `192`, global node/DOF indexing, and `assemble_bearing_force`.  Local
+   contact fields such as `contact_stiffness` are permitted.
+5. State that the 64-step B1 case is an interface regression, not a time-step
+   convergence study.
 
 ## Explicitly protected files
 
