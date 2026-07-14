@@ -38,6 +38,67 @@ inputs contain only bearing-local kinematics, bearing parameters, time, and
 the local contact state.  The force result is assembled by the unchanged
 existing assembly path.
 
+## Closed-loop thermal coupling constraints
+
+The thermal module is an optional local constitutive calculation. It must not
+change Newmark integration, static or dynamic KKT constraints, the 192-DOF
+definition, global M/C/K construction, or global bearing-force assembly.
+
+### Callback boundary
+
+`contact_base` and `contact_mod` contain only local physical fields. Neither
+may contain an evaluator function handle. The local, purely mechanical
+evaluator is supplied only through the operating state:
+
+```matlab
+operating_state.evaluate_raw_contact = ...
+    @(contact_trial) evaluate_raw_contact(contact_trial, local, brg, t);
+```
+
+The evaluator must not call `apply_microphysics`. One invocation returns a
+complete, internally consistent result: `f5`, `Q`, `delta`, `loaded`,
+`contact_angle`, `element_angle`, `normal_direction`, and `contact_position`.
+The thermal code uses this single result for drag, slip speed, and friction
+power; it must not separately invoke ball and roller force laws.
+
+### Oil-film provenance
+
+No fixed 20 kN or 80 kN case, fixed-case film result, file-driven source
+program, batch driver, or independent cage dynamics solver is migrated from
+`temperature-bearing`. Film thickness is calculated for the current bearing
+geometry, `params.omega`, local contact load `Q_i`, temperature-dependent
+dynamic viscosity, pressure-viscosity coefficient, entrainment speed, and
+loaded-contact set: `h_i = h_i(eta, alpha_p, U_i, Q_i, geometry)`.
+
+If a reduced temperature power law supplies a first film estimate, its
+reference thickness comes from the current rotor-system thermal-disabled
+contact result, never from a fixed-load source case.
+
+### Required local iteration
+
+Each local force evaluation starts at the configured oil temperature and has
+no cross-call state:
+
+```text
+T(k) -> eta(k), alpha_p(k), c_work(k) -> h_i(k) -> delta_eff(k)
+     -> evaluate_raw_contact -> Q_i(k), f5(k) -> Q_fric(k) -> T(k+1)
+```
+
+After convergence, the complete chain is executed once more at `T_final` and
+only that final force/contact state is returned. The loop has
+`max_iterations = 80`, fixed initial temperature equal to `oil_temperature_C`,
+and `fail_on_nonconvergence = true`.
+
+### Finite-difference determinism and diagnostics
+
+The existing 5-by-5 central-difference tangents repeatedly call the force law.
+The thermal solve must have no `global`, `persistent`, random input, file I/O,
+or temperature cache. Identical local inputs produce identical local outputs;
+reuse is allowed only within a completed local call. The validation record
+reports mean/max thermal iterations, local thermal contact evaluations per
+time step, wall-clock time with thermal disabled/enabled, and thermal
+nonconvergence count.
+
 ## Files
 
 - `microphysics_config.m`: returns `thermal.enabled`, `roughness.enabled`, and
