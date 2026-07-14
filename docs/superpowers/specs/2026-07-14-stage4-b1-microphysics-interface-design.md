@@ -30,7 +30,7 @@ the force from the returned local state:
 contact_base = build_base_contact_state(...);
 [contact_mod, micro_state] = apply_microphysics( ...
     contact_base, operating_state, micro_state, cfg);
-[f5, state] = solve_contact_force(contact_mod);
+[f5, state] = solve_contact_force(contact_mod, operating_state);
 ```
 
 The two local helpers contain no access to global structural objects.  Their
@@ -38,66 +38,65 @@ inputs contain only bearing-local kinematics, bearing parameters, time, and
 the local contact state.  The force result is assembled by the unchanged
 existing assembly path.
 
-## Closed-loop thermal coupling constraints
+## Delivery phases
 
-The thermal module is an optional local constitutive calculation. It must not
-change Newmark integration, static or dynamic KKT constraints, the 192-DOF
-definition, global M/C/K construction, or global bearing-force assembly.
+This commit is phase 1 only: freeze the old entry, introduce the local-contact
+contract and the sole `apply_microphysics` gateway, retain transparent thermal,
+roughness, and impurity modules, and prove B0/B1 identity. It must not
+implement closed-loop thermal physics. The closed-loop thermal model is phase
+2 and is delivered in its own later commit:
 
-### Callback boundary
+```text
+feat: add transparent Stage4-B1 microphysics interface
+feat: couple closed-loop thermal bearing dynamics
+```
 
-`contact_base` and `contact_mod` contain only local physical fields. Neither
-may contain an evaluator function handle. The local, purely mechanical
-evaluator is supplied only through the operating state:
+### Callback and mechanical-kernel contract
+
+`contact_base` and `contact_mod` hold only local physical fields; neither may
+hold an evaluator function handle. `operating_state` reserves the callback:
 
 ```matlab
 operating_state.evaluate_raw_contact = ...
     @(contact_trial) evaluate_raw_contact(contact_trial, local, brg, t);
 ```
 
-The evaluator must not call `apply_microphysics`. One invocation returns a
-complete, internally consistent result: `f5`, `Q`, `delta`, `loaded`,
-`contact_angle`, `element_angle`, `normal_direction`, and `contact_position`.
-The thermal code uses this single result for drag, slip speed, and friction
-power; it must not separately invoke ball and roller force laws.
-
-### Oil-film provenance
-
-No fixed 20 kN or 80 kN case, fixed-case film result, file-driven source
-program, batch driver, or independent cage dynamics solver is migrated from
-`temperature-bearing`. Film thickness is calculated for the current bearing
-geometry, `params.omega`, local contact load `Q_i`, temperature-dependent
-dynamic viscosity, pressure-viscosity coefficient, entrainment speed, and
-loaded-contact set: `h_i = h_i(eta, alpha_p, U_i, Q_i, geometry)`.
-
-If a reduced temperature power law supplies a first film estimate, its
-reference thickness comes from the current rotor-system thermal-disabled
-contact result, never from a fixed-load source case.
-
-### Required local iteration
-
-Each local force evaluation starts at the configured oil temperature and has
-no cross-call state:
+`evaluate_raw_contact` is the only mechanical Hertz-contact kernel. It must
+not call `apply_microphysics`, and it returns a fixed contract for both bearing
+types:
 
 ```text
-T(k) -> eta(k), alpha_p(k), c_work(k) -> h_i(k) -> delta_eff(k)
-     -> evaluate_raw_contact -> Q_i(k), f5(k) -> Q_fric(k) -> T(k+1)
+result.f5, result.Q, result.delta, result.delta_raw, result.loaded,
+result.loaded_count, result.element_angle, result.contact_angle,
+result.normal_direction, result.contact_position, result.slice_z, result.state
 ```
 
-After convergence, the complete chain is executed once more at `T_final` and
-only that final force/contact state is returned. The loop has
-`max_iterations = 80`, fixed initial temperature equal to `oil_temperature_C`,
-and `fail_on_nonconvergence = true`.
+Fields not applicable to a ball or roller bearing are empty arrays. There are
+no parallel ball/roller force paths in a module: `solve_contact_force` invokes
+`operating_state.evaluate_raw_contact` and derives `f5` and the public state
+from its result. A later
+thermal module must call the same callback and cannot infer a different result
+shape from bearing type.
 
-### Finite-difference determinism and diagnostics
+### Module boundaries and state contract
 
-The existing 5-by-5 central-difference tangents repeatedly call the force law.
-The thermal solve must have no `global`, `persistent`, random input, file I/O,
-or temperature cache. Identical local inputs produce identical local outputs;
-reuse is allowed only within a completed local call. The validation record
-reports mean/max thermal iterations, local thermal contact evaluations per
-time step, wall-clock time with thermal disabled/enabled, and thermal
-nonconvergence count.
+All three modules are transparent in phase 1. The external gateway remains:
+
+```matlab
+[contact_mod, micro_state] = apply_microphysics(...)
+```
+
+Internally every module returns its local state, for example
+`[contact_mod, thermal_state] = apply_thermal_microphysics(...)`, which is
+stored as `micro_state.temperature`. Roughness and impurity follow the same
+state-passing pattern. The phase-1 thermal mutation allow-list excludes
+`contact_stiffness`; it contains only `viscosity`, `pressure_viscosity`,
+`working_clearance`, and `film_thickness`. In phase 1 all are left unchanged.
+
+The later thermal phase will be deterministic under repeated finite-difference
+calls: no `global`, `persistent`, random input, file I/O, or cross-call
+temperature cache. That phase will use the callback contract, current-system
+geometry/load/speed, and never fixed 20 kN/80 kN cases or their film results.
 
 ## Files
 
@@ -108,8 +107,7 @@ nonconvergence count.
   enabled modules in thermal, roughness, impurity order and otherwise returns
   an identical local contact state.
 - `bearing_microphysics/thermal/`: transparent placeholder constrained to
-  `viscosity`, `pressure_viscosity`, `working_clearance`, `film_thickness`, and
-  `contact_stiffness`.
+  `viscosity`, `pressure_viscosity`, `working_clearance`, and `film_thickness`.
 - `bearing_microphysics/roughness/`: transparent placeholder constrained to
   `surface_height`, `effective_deformation`, `asperity_contact_ratio`,
   `contact_stiffness`, and `contact_damping`.
@@ -128,17 +126,23 @@ nonconvergence count.
 2. Run one 64-step transverse Stage4-B1 harmonic simulation on the frozen
    implementation and once on the interface implementation with all switches
    false.
-3. Compare complete `u`, `v`, and `a` histories, both bearings' five-component
-   force histories, contact-body counts, local `K_b`/`C_b`, Newton iterations,
-   and unconverged-step counts.  B0 must remain exactly zero.  B1 uses
+3. Record `bearing_force_5dof_hist(5, nb, nt+1)` and compare complete `u`,
+   `v`, and `a` histories, each bearing's `[Fx,Fy,Fz,Mx,My]` history,
+   contact-body counts, local `K_b`/`C_b`, Newton iterations, and unconverged
+   step counts. B0 must remain exactly zero. B1 uses
    `abs(new-frozen) <= 1e-12 + 1e-10*abs(frozen)` elementwise; only if a
    documented ordering difference remains may the relative term be relaxed to
    `1e-8`.
-4. Statically check the microphysics directory for these forbidden tokens only:
-   `newmark_newton_multi`, `solve_static_equilibrium`, `MM`, `KK`, `KKT`,
-   `192`, global node/DOF indexing, and `assemble_bearing_force`.  Local
-   contact fields such as `contact_stiffness` are permitted.
-5. State that the 64-step B1 case is an interface regression, not a time-step
+4. Statically scan the microphysics directory for explicit forbidden patterns:
+   `newmark_newton_multi(`, `solve_static_equilibrium(`,
+   `assemble_bearing_force(`, `params.modelInfo`, `num_rotor_dof`, global
+   node/DOF indexing, `global`, and `persistent`. Manually confirm that it
+   does not access global DOFs or M/C/K, or call Newmark, KKT, or global force
+   assembly.
+5. Run frozen-chain resolution under `onCleanup`; afterwards use
+   `which nonlinear_bearing_force -all` to confirm that production resolves
+   to the interface first and the frozen version is validation-only.
+6. State that the 64-step B1 case is an interface regression, not a time-step
    convergence study.
 
 ## Explicitly protected files
