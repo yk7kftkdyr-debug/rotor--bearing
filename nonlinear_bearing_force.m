@@ -103,9 +103,11 @@ end
 function contact_base = build_base_contact_state(local, brg, t)
 %BUILD_BASE_CONTACT_STATE Local-only contact record for microphysics modules.
 contact_base = struct('local', local, 'brg', brg, 'time', t, ...
+    'bearing_type', lower(brg.type), 'element_count', brg.n, ...
+    'slice_count', stage4a_slice_count(brg), ...
     'viscosity', [], 'pressure_viscosity', [], ...
     'working_clearance', get_field_default(brg.assembly, 'radial_clearance', 0), ...
-    'film_thickness', [], 'surface_height', [], ...
+    'film_thickness', 0, 'surface_height', [], ...
     'effective_deformation', [], 'asperity_contact_ratio', [], ...
     'contact_stiffness', contact_stiffness_value(brg), ...
     'contact_damping', [], 'characteristic_displacement', []);
@@ -119,13 +121,17 @@ state = result.state;
 end
 
 function result = evaluate_raw_contact(contact_trial, local, brg, t)
-[f5, state] = stage4a_bearing_force(local, brg, [], t);
+[f5, state] = stage4a_bearing_force(local, brg, contact_trial, t);
 result = struct('f5', f5, 'Q', state.Q, 'delta', state.delta, ...
     'delta_raw', state.delta_raw, 'loaded', state.Q > 0, ...
     'loaded_count', state.loaded_count, 'element_angle', state.theta, ...
     'contact_angle', state.contact_angle, 'normal_direction', [], ...
     'contact_position', [], 'slice_z', [], 'state', state);
 if isfield(state, 'slice_z'), result.slice_z = state.slice_z; end
+end
+
+function ns = stage4a_slice_count(brg)
+if strcmpi(brg.type, 'roller'), ns = brg.stage4A_slice_count; else, ns = 1; end
 end
 
 function value = contact_stiffness_value(brg)
@@ -185,14 +191,14 @@ ir=6*brg.rotor_node+(-5:-1); ic=num_rotor+6*brg.case_node+(-5:-1); local.r=q(ir)
 local.xr=local.r(1); local.yr=local.r(2); local.vxr=local.rdot(1); local.vyr=local.rdot(2);
 end
 
-function [f,state] = stage4a_bearing_force(local, brg, ~, t)
-if strcmpi(brg.type,'ball'), [f,state]=stage4a_ball_force(local,brg,[],t); else, [f,state]=stage4a_roller_force(local,brg,[],t); end
+function [f,state] = stage4a_bearing_force(local, brg, contact, t)
+if strcmpi(brg.type,'ball'), [f,state]=stage4a_ball_force(local,brg,contact,t); else, [f,state]=stage4a_roller_force(local,brg,contact,t); end
 end
 
-function [f,state] = stage4a_ball_force(local,b,~,t)
-n=b.n; theta=2*pi*(0:n-1)/n; r=local.r; a0=b.assembly.contact_angle0; a=max(1*pi/180,min(b.assembly.contact_angle_max,a0+r(3)/max(b.Dm/2,eps))); c=b.assembly.radial_clearance; z=b.stage4A_width_m/2; Q=zeros(1,n); delta=zeros(1,n); f=zeros(5,1);
+function [f,state] = stage4a_ball_force(local,b,contact,t)
+n=b.n; theta=2*pi*(0:n-1)/n; r=local.r; a0=b.assembly.contact_angle0; a=max(1*pi/180,min(b.assembly.contact_angle_max,a0+r(3)/max(b.Dm/2,eps))); c=contact.working_clearance; h=normalize_contact_film_thickness(contact.film_thickness,[1 n]); z=b.stage4A_width_m/2; Q=zeros(1,n); delta=zeros(1,n); f=zeros(5,1);
 for j=1:n
-    cj=cos(theta(j)); sj=sin(theta(j)); x_contact=r(1)+z*r(5); y_contact=r(2)-z*r(4); delta(j)=x_contact*cj+y_contact*sj+(r(3)+b.assembly.preload_displacement)*sin(a)-c;
+    cj=cos(theta(j)); sj=sin(theta(j)); x_contact=r(1)+z*r(5); y_contact=r(2)-z*r(4); delta(j)=x_contact*cj+y_contact*sj+(r(3)+b.assembly.preload_displacement)*sin(a)-c-h(j);
     if delta(j)>0
         Q(j)=b.K_point*delta(j)^(3/2); fj=-Q(j)*[cos(a)*cj;cos(a)*sj;sin(a)]; f(1:3)=f(1:3)+fj; f(4)=f(4)-z*fj(2); f(5)=f(5)+z*fj(1);
     end
@@ -200,17 +206,18 @@ end
 state.theta=theta; state.Q=Q; state.delta=max(delta,0); state.delta_raw=delta; state.loaded_count=sum(Q>0); state.loaded_index=find(Q>0); state.max_contact_load=max(Q); state.contact_angle=a; state.c_work=c; state.preload_status=b.assembly.preload_mode; state.message=stage4a_warning(b); state.slice_count=1; state.time=t;
 end
 
-function [f,state] = stage4a_roller_force(local,b,~,t)
-n=b.n; ns=b.stage4A_slice_count; theta=2*pi*(0:n-1)/n; zs=linspace(-b.L/2,b.L/2,ns); r=local.r; c=b.assembly.radial_clearance; Q=zeros(n,ns); delta=zeros(n,ns); f=zeros(5,1);
+function [f,state] = stage4a_roller_force(local,b,contact,t)
+n=b.n; ns=b.stage4A_slice_count; theta=2*pi*(0:n-1)/n; zs=linspace(-b.L/2,b.L/2,ns); r=local.r; c=contact.working_clearance; h=normalize_contact_film_thickness(contact.film_thickness,[n ns]); Q=zeros(n,ns); delta=zeros(n,ns); f=zeros(5,1);
 for j=1:n
     cj=cos(theta(j)); sj=sin(theta(j));
     for k=1:ns
-        z=zs(k); delta(j,k)=r(1)*cj+r(2)*sj+z*(r(5)*cj-r(4)*sj)-c;
+        z=zs(k); delta(j,k)=r(1)*cj+r(2)*sj+z*(r(5)*cj-r(4)*sj)-c-h(j,k);
         if delta(j,k)>0
             Q(j,k)=(b.K_line/ns)*delta(j,k)^(10/9); fj=-Q(j,k)*[cj;sj]; f(1:2)=f(1:2)+fj; f(4)=f(4)-z*fj(2); f(5)=f(5)+z*fj(1);
         end
     end
 end
+
 state.theta=theta; state.slice_z=zs; state.Q=Q; state.delta=max(delta,0); state.delta_raw=delta; state.loaded_count=sum(any(Q>0,2)); state.loaded_index=find(any(Q>0,2)); state.max_contact_load=max(Q,[],'all'); state.contact_angle=0; state.c_work=c; state.preload_status=b.assembly.preload_mode; state.message='rear floating: Fz fixed to zero; roller crowning unknown'; state.slice_count=ns; state.slice_validation_count=b.stage4A_slice_validation_count; state.time=t;
 end
 

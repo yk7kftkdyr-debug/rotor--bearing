@@ -1,5 +1,7 @@
-function result = run_microphysics_interface_validation()
+function result = run_microphysics_interface_validation(write_report)
 %RUN_MICROPHYSICS_INTERFACE_VALIDATION B0 then one frozen/new B1 regression.
+
+if nargin < 1, write_report = true; end
 
 root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 addpath(root);
@@ -22,7 +24,9 @@ assert(result.b1.pass, 'B1 frozen/interface regression exceeded tolerance.');
 
 result.static_boundary_pass = static_boundary_check(root);
 assert(result.static_boundary_pass, 'Microphysics module boundary scan failed.');
-write_validation_report(fullfile(root, 'microphysics_interface_validation.txt'), result);
+if write_report
+    write_validation_report(fullfile(root, 'microphysics_interface_validation.txt'), result);
+end
 end
 
 function assert_raw_contact_contract(params)
