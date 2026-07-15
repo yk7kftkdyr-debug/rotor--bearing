@@ -1,4 +1,19 @@
-function [contact_mod, thermal_state] = apply_thermal_microphysics(contact_mod, ~, ~, ~)
-%APPLY_THERMAL_MICROPHYSICS Transparent placeholder for local thermal effects.
-thermal_state = struct('enabled', false, 'mode', 'transparent');
+function [contact_mod, thermal_state] = apply_thermal_microphysics(contact_mod, operating_state, ~, cfg)
+%APPLY_THERMAL_MICROPHYSICS Local deterministic reduced thermal contact loop.
+
+if ~cfg.enabled
+    thermal_state = disabled_thermal_state();
+    return;
+end
+[contact_mod, thermal_state] = solve_closed_loop_thermal_contact( ...
+    contact_mod, operating_state, cfg);
+end
+
+function state = disabled_thermal_state()
+state = struct('enabled', false, 'T_oil_C', NaN, 'T_final_C', NaN, ...
+    'Q_fric_W', NaN, 'Q_cool_W', NaN, 'thermal_residual_C', NaN, ...
+    'iterations', 0, 'converged', false, 'viscosity_Pa_s', NaN, ...
+    'pressure_viscosity_Pa_inv', NaN, 'working_clearance_m', NaN, ...
+    'film_thickness_min_m', NaN, 'loaded_count', 0, ...
+    'max_contact_load', 0, 'local_contact_evaluations', 0);
 end

@@ -39,7 +39,8 @@ for ib = 1:nb
     local = bearing_relative_state(q, qd, brg, num_rotor);
     if isfield(params,'stage4A') && get_field_default(params.stage4A,'enable',false)
         contact_base = build_base_contact_state(local, brg, t);
-        operating_state = struct('time', t, 'bearing_index', ib);
+        operating_state = struct('time', t, 'bearing_index', ib, ...
+            'omega_rad_s', params.omega);
         operating_state.evaluate_raw_contact = ...
             @(contact_trial) evaluate_raw_contact(contact_trial, local, brg, t);
         [contact_mod, micro_state] = apply_microphysics(contact_base, operating_state, struct(), micro_cfg);
