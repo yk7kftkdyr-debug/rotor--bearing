@@ -11,17 +11,22 @@ params.use_uploaded_rotor_model = false; % Stage-1 uses the checked-in 19/13-nod
 params.uploaded_model_dir = char([68 58 92 24120 29992 25991 20214 92 31243 24207 92 31243 24207 92 78 101 119 109 97 114 107 35299 25925 38556 36724 25215]);
 params.report_file = 'D:\bearing\gunzi\2.txt';
 
-% Rotor node positions, m: 19 nodes. The former terminal span is split so
-% elements 15--17 retain the whole-disc stiffness region; mass is at R16.
-params.node_pos = [0 cumsum([30 107 20.5 40.5 99 115.25 115.25 82 70 102.02 66.98 58 23 50 50 40 30 29.5]/1000)];
+% Document-based segmented rotor geometry. All tabulated quantities are
+% diameters in mm and are converted once to SI units here.
+rotor_length_mm = [30; 107; 20.5; 40.5; 99; 230.5; 230.5; 82; 70; 102.02; 66.98; 58; 23; 40; 41; 35; 41; 42.5];
+rotor_id_mm = [126; 126; 126; 126; 152.4; 152.4; 152.4; 152.4; 152.4; 152.4; 152.4; 152.4; 152.4; 152.4; 135; 135; 135; 152.4];
+rotor_od_mm = [160; 160; 180; 210; 178.4; 162.9; 162.9; 174.4; 194; 168; 168; 199.5; 346.5; 168; 347; 702.5; 347; 162.9];
+params.rotor_elements = struct('length_m', rotor_length_mm*1e-3, 'inner_diameter_m', rotor_id_mm*1e-3, 'outer_diameter_m', rotor_od_mm*1e-3, 'count', 18, 'mass_scale', ones(18,1));
+params.rotor_elements.mass_scale(15:17) = 0; % Disk geometry supplies stiffness only; disk mass is lumped at R16.
+params.node_pos = [0; cumsum(params.rotor_elements.length_m)];
 
-% Shaft section parameters, SI units.
-params.shaft_od = 0.038;
-params.shaft_id = 0.000;
-params.rho = 7850;
-params.E = 2.145e11;
-params.G = 8.1e10;
-params.nu = 0.2808;
+% Rotor material, SI units.
+params.E = 210e9;
+params.nu = 0.30;
+params.G = params.E/(2*(1 + params.nu));
+params.rho = 7800;
+params.shaft_od = params.rotor_elements.outer_diameter_m(1); % Deprecated compatibility field; not used by the segmented builder.
+params.shaft_id = params.rotor_elements.inner_diameter_m(1); % Deprecated compatibility field; not used by the segmented builder.
 
 % Mass model: bare shaft core remains distributed; two concentrated masses
 % are at R6/R8 and the complete disk mass is concentrated only at R16.
@@ -34,17 +39,28 @@ params.mass_target.roller_reaction_N = 4799.671;
 params.concentrated_mass.nodes = [6 8];
 params.concentrated_mass.kg = [251.194 171.18];
 params.concentrated_mass.inertia_kgm2 = [15.17 7.8 7.8; 6.18 3.2 3.2]; % [Ix Iy Iz] -> [theta_x theta_y theta_z].
+params.concentrated_mass.reference_position_m = [0.302 0.733];
 params.disk_mass.node = 16;
 params.disk_mass.kg = 146.832;
-params.shaft_mass_rho = (params.mass_target.shaft_N/9.80665)/(pi/4*(params.shaft_od^2-params.shaft_id^2)*params.node_pos(end));
+params.disk_mass.inertia_kgm2 = [7.4 3.78 3.78]; % [Ix Iy Iz] -> [theta_x theta_y theta_z].
+params.shaft_mass_rho = params.rho; % Deprecated compatibility field; not used by the segmented builder.
 
-% Fallback case model.
-params.case_node_pos = params.node_pos([1 2 3 5 6 8 9 10 12 14 16 18 19]); % 13 nodes; C2=R2, C8=R10.
-params.case_od = 0.120;
-params.case_id = 0.095;
-params.case_rho = 7830;
-params.case_E = 2.06e11;
-params.case_mass_rho = (params.mass_target.case_N/9.80665)/(pi/4*(params.case_od^2-params.case_id^2)*(params.case_node_pos(end)-params.case_node_pos(1)));
+% Document-based segmented casing geometry. All tabulated quantities are
+% diameters in mm and are converted once to SI units here.
+case_length_mm = [25; 120; 215; 20.02; 140; 218; 218; 76; 36; 240; 24; 117.16];
+case_id_mm = [320; 925; 940; 725; 1050; 1265; 1265; 1265; 725; 1180; 1172; 1190];
+case_od_mm = [955; 955; 1050; 1065; 1280; 1295; 1295; 1295; 1399; 1280; 1256; 1260];
+params.case_elements = struct('length_m', case_length_mm*1e-3, 'inner_diameter_m', case_id_mm*1e-3, 'outer_diameter_m', case_od_mm*1e-3, 'count', 12, 'mass_scale', ones(12,1));
+params.case_node_pos = [0; cumsum(params.case_elements.length_m)];
+params.case_E = 193e9;
+params.case_nu = 0.30;
+params.case_G = params.case_E/(2*(1 + params.case_nu));
+params.case_rho = 7930;
+params.case_od = params.case_elements.outer_diameter_m(1); % Deprecated compatibility field; not used by the segmented builder.
+params.case_id = params.case_elements.inner_diameter_m(1); % Deprecated compatibility field; not used by the segmented builder.
+params.case_mass_rho = params.case_rho; % Deprecated compatibility field; not used by the segmented builder.
+params.case_bearing_mass.nodes = [2 8];
+params.case_bearing_mass.kg = [10.2 10.2];
 params.case_ground_nodes = [1 13];
 params.case_ground_k = 5.0e8;
 params.case_ground_c = 2.0e3;
@@ -143,15 +159,6 @@ params.static_load.nodes = [2 10];
 params.static_load.Fx = [0 0];
 params.static_load.Fy = [0 0];
 params.static_load.Fz = [0 0]; % Axial steady load at actual rotor nodes; default is zero.
-params.disk_mass.inertia_kgm2 = [7.4 3.78 3.78]; % [Ix Iy Iz] -> [theta_x theta_y theta_z].
-params.case_ground_axial_k = 1.0e8; % Configurable engineering initial values; not copied from transverse support.
-params.case_ground_axial_c = 100;
-params.case_ground_bending_rot_k = 1.0e6;
-params.case_ground_bending_rot_c = 10;
-params.case_ground_torsion_k = 1.0e6;
-params.case_ground_torsion_c = 10;
-params.legacy_rotor_bending_reference_k = 1.0e2; % Retains the verified 4-DOF fallback's numerical bending-rotation reference.
-params.stage3_engineering_initials_pending_calibration = true; % Axial/torsional foundation values and disk principal inertias require measured calibration.
 
 % Speed input.
 params.rpm = 9900;
