@@ -39,7 +39,7 @@ for ib = 1:nb
     local = bearing_relative_state(q, qd, brg, num_rotor);
     if isfield(params,'stage4A') && get_field_default(params.stage4A,'enable',false)
         contact_base = build_base_contact_state(local, brg, t);
-        operating_state = struct('time', t, 'bearing_index', ib);
+        operating_state = struct('time', t, 'bearing_index', ib, 'omega', params.omega, 'E_star', params.E/(2*(1-params.nu^2)));
         operating_state.evaluate_raw_contact = ...
             @(contact_trial) evaluate_raw_contact(contact_trial, local, brg, t);
         [contact_mod, micro_state] = apply_microphysics(contact_base, operating_state, struct(), micro_cfg);
@@ -47,6 +47,12 @@ for ib = 1:nb
         state = stage4a_normalize_state(state);
         state.raw_contact = raw_contact;
         state.microphysics_state = micro_state;
+        if micro_state.temperature.enabled
+            [film, film_state] = update_contact_film_from_load(raw_contact.Q, micro_state.temperature.contact_geometry, micro_state.temperature.input.eta, micro_state.temperature.input.alpha_p);
+            state.h = film.h_m; state.film = film; state.film_state = film_state;
+            state.raw_contact.film = film;
+            state.microphysics_state.temperature.input.film_thickness = film.hmin_m;
+        end
         Fb_global = assemble_bearing_force(Fb_global, f5, brg.rotor_node, brg.case_node, num_rotor);
         state.Fx=f5(1); state.Fy=f5(2); state.Fz=f5(3); state.Mx=f5(4); state.My=f5(5); state.r=local.r; state.rdot=local.rdot; state.rotor_node=brg.rotor_node; state.case_node=brg.case_node; state.name=brg.name; state.bearing_model_stage='5DOF_static_interface';
         if ib == 1, bearingState.bearings=state; else, bearingState.bearings(ib)=state; end
@@ -134,9 +140,6 @@ function brg = apply_frozen_contact_state(brg, contact_trial)
 if ~isempty(contact_trial.viscosity), brg.oil_viscosity = contact_trial.viscosity; end
 if ~isempty(contact_trial.pressure_viscosity), brg.pressure_viscosity = contact_trial.pressure_viscosity; end
 if ~isempty(contact_trial.working_clearance), brg.assembly.radial_clearance = contact_trial.working_clearance; end
-if isfield(contact_trial, 'thermal_preload') && ~isempty(contact_trial.thermal_preload)
-    brg.assembly.preload_displacement = contact_trial.thermal_preload;
-end
 end
 
 function value = contact_stiffness_value(brg)
