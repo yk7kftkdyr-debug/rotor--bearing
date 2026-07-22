@@ -65,9 +65,10 @@ if ~isscalar(checkpoint.completed_case_count) || checkpoint.completed_case_count
 end
 status = string(checkpoint.status);
 allowed_status = ["initialized" "running" "completed" "failed" "budget_exhausted"];
-if ~isscalar(status) || ~any(status == allowed_status) || ...
-        (status == "initialized" && checkpoint.completed_case_count ~= 0) || ...
-        (status == "completed" && checkpoint.completed_case_count ~= case_count)
+progress_valid = (status == "initialized" && checkpoint.completed_case_count == 0) || ...
+    ((status == "running" || status == "failed" || status == "budget_exhausted") && checkpoint.completed_case_count <= case_count-1) || ...
+    (status == "completed" && checkpoint.completed_case_count == case_count);
+if ~isscalar(status) || ~any(status == allowed_status) || ~progress_valid
     error('Stage9A:CheckpointStatus', 'Checkpoint status is not consistent with its progress.');
 end
 end
