@@ -20,6 +20,14 @@ if ~isequal(fieldnames(loaded), {'checkpoint'})
     error('Stage9A:CheckpointVariable', 'Checkpoint file must contain exactly one variable named checkpoint.');
 end
 checkpoint = loaded.checkpoint;
+if controlled_legacy_migration_allowed(checkpoint, cfg, identity)
+    completed_records = checkpoint.case_records;
+    checkpoint.source_commit = identity.commit;
+    if ~isequaln(checkpoint.case_records, completed_records)
+        error('Stage9B2R:MigrationRecords', 'Controlled commit migration may not modify completed case records.');
+    end
+    write_thermal_checkpoint_atomic(checkpoint, cfg.checkpoint_file);
+end
 validate_checkpoint(checkpoint, cfg, identity);
 resumed = true;
 end
@@ -89,4 +97,43 @@ elseif iscell(template)
 else
     pass = true;
 end
+end
+
+function allowed = controlled_legacy_migration_allowed(checkpoint, cfg, identity)
+legacy_commit = 'b947098687f2d98edf155d8a423e5d35161af49e';
+allowed = isstruct(checkpoint) && isfield(checkpoint, 'source_commit') && strcmp(checkpoint.source_commit, legacy_commit);
+if ~allowed, return; end
+template = empty_thermal_checkpoint(cfg);
+if ~same_schema(checkpoint, template) || ~strcmp(checkpoint.version, cfg.checkpoint_version) || ...
+        ~strcmp(checkpoint.source_branch, identity.branch) || ~strcmp(checkpoint.config_signature, cfg.config_signature) || ...
+        ~isequal(checkpoint.temperature_list_C, cfg.temperature_list_C) || checkpoint.status ~= "budget_exhausted" || ...
+        checkpoint.completed_case_count ~= 3 || checkpoint.next_case_index ~= 4 || numel(checkpoint.case_records) ~= 4
+    allowed = false; return;
+end
+for case_index = 1:3
+    record = checkpoint.case_records(case_index);
+    if record.meta.status ~= "completed" || record.meta.T_oil_C ~= cfg.temperature_list_C(case_index) || ~record_passes_all_gates(record)
+        allowed = false; return;
+    end
+end
+if checkpoint.case_records(3).meta.T_oil_C ~= 80 || checkpoint.case_records(3).resume_state.valid
+    allowed = false; return;
+end
+entries = dir(cfg.result_root); names = string({entries.name}); names = names(names ~= "." & names ~= "..");
+if numel(names) ~= 1 || names ~= "thermal_4cases_checkpoint.mat"
+    allowed = false; return;
+end
+[ancestor_status, ~] = system(sprintf('git merge-base --is-ancestor %s %s', legacy_commit, identity.commit));
+if ancestor_status ~= 0, allowed = false; return; end
+[diff_status, changed_files] = system(sprintf('git diff --name-only %s..%s', legacy_commit, identity.commit));
+changed_files = string(splitlines(strtrim(changed_files))); changed_files = changed_files(changed_files ~= "");
+allowed_files = ["run_thermal_outer_loop_4cases.m"; "initialize_or_resume_thermal_checkpoint.m"];
+if diff_status ~= 0 || isempty(changed_files) || ~all(ismember(changed_files, allowed_files))
+    allowed = false;
+end
+end
+
+function pass = record_passes_all_gates(record)
+pass = record.convergence.pass && record.bearing.ball.stiffness_pass && record.bearing.roller.stiffness_pass && ...
+    record.bearing.ball.damping_pass && record.bearing.roller.damping_pass && record.linearization.pass && record.modal.pass && record.dynamics.pass;
 end

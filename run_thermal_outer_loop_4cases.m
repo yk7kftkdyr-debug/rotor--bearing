@@ -30,6 +30,21 @@ for case_index = checkpoint.next_case_index:numel(cfg.temperature_list_C)
         write_thermal_checkpoint_atomic(checkpoint, cfg.checkpoint_file);
         error(char(record.error.identifier), '%s', char(record.error.message));
     end
+    if isfield(shared, 'legacy_cold_start') && shared.legacy_cold_start.active && case_index == 4
+        record.initialization = legacy_cold_start_initialization(shared.legacy_cold_start.continued_from_temperature_C);
+        shared_next.legacy_cold_start.active = false;
+    end
+    try
+        validate_continuation_state(continuation_next, params_base, model_cache);
+        record.resume_state = continuation_next;
+        validate_continuation_state(record.resume_state, params_base, model_cache);
+    catch ME
+        record = continuation_failure_record(record, ME, T_oil_C);
+        checkpoint.case_records(case_index) = record; checkpoint.status = "failed"; checkpoint.last_error_id = record.error.identifier;
+        checkpoint.last_error_message = record.error.message; checkpoint.elapsed_total_s = elapsed_before_s + toc(started);
+        write_thermal_checkpoint_atomic(checkpoint, cfg.checkpoint_file);
+        rethrow(ME);
+    end
     checkpoint.case_records(case_index) = record; checkpoint.completed_case_count = case_index; checkpoint.next_case_index = case_index + 1;
     checkpoint.status = "running"; checkpoint.last_error_id = ''; checkpoint.last_error_message = '';
     checkpoint.elapsed_total_s = elapsed_before_s + toc(started); continuation = continuation_next; shared = shared_next;
@@ -101,9 +116,14 @@ if checkpoint.completed_case_count == 0, return; end
 for i = 1:checkpoint.completed_case_count
     if ~case_record_passes(checkpoint.case_records(i)), error('Stage9B2:CompletedRecord', 'Completed case %d does not pass all required gates.', i); end
 end
-continuation = checkpoint.case_records(checkpoint.completed_case_count).resume_state;
-if ~continuation.valid, error('Stage9B2:ResumeState', 'Latest completed record has no valid continuation state.'); end
-shared = reconstruct_shared_reference(checkpoint.case_records, params, cache, cfg);
+    continuation = checkpoint.case_records(checkpoint.completed_case_count).resume_state;
+    legacy_cold_start = legacy_cold_start_allowed(checkpoint, cfg);
+    if ~continuation.valid && ~legacy_cold_start, error('Stage9B2:ResumeState', 'Latest completed record has no valid continuation state.'); end
+    shared = reconstruct_shared_reference(checkpoint.case_records, params, cache, cfg);
+    if legacy_cold_start
+        continuation = empty_thermal_case_record(cfg).resume_state;
+        shared.legacy_cold_start = struct('active', true, 'continued_from_temperature_C', 80);
+    end
 end
 
 function shared = reconstruct_shared_reference(records, params, cache, cfg)
@@ -184,4 +204,61 @@ end
 function pass = case_record_passes(record)
 pass = record.convergence.pass && record.bearing.ball.stiffness_pass && record.bearing.roller.stiffness_pass && ...
     record.bearing.ball.damping_pass && record.bearing.roller.damping_pass && record.linearization.pass && record.modal.pass && record.dynamics.pass;
+end
+
+function validate_continuation_state(continuation, params, cache)
+required = {'valid','q_static','ball_T_final_C','roller_T_final_C','ball_Q','roller_Q','ball_film','roller_film','ball_loaded_mask','roller_loaded_mask'};
+if ~isstruct(continuation) || ~all(isfield(continuation, required))
+    error('Stage9B2R:ContinuationSchema', 'continuation_out does not match the fixed resume-state schema.');
+end
+if ~(islogical(continuation.valid) && isscalar(continuation.valid) && continuation.valid)
+    error('Stage9B2R:ContinuationValid', 'Completed cases require continuation_out.valid=true.');
+end
+n_dof = size(cache.M,1);
+if ~isequal(size(continuation.q_static), [n_dof 1]) || any(~isfinite(continuation.q_static(:)))
+    error('Stage9B2R:ContinuationQStatic', 'continuation_out.q_static must be a finite %d-by-1 global state.', n_dof);
+end
+temperatures = [continuation.ball_T_final_C continuation.roller_T_final_C];
+if ~isreal(temperatures) || any(~isfinite(temperatures)) || any(temperatures <= -273.15)
+    error('Stage9B2R:ContinuationTemperature', 'Continuation bearing temperatures must be finite and above absolute zero in degrees C.');
+end
+validate_contact_grid(continuation.ball_Q, continuation.ball_film, continuation.ball_loaded_mask, [1 params.bearing(1).n], 'ball');
+validate_contact_grid(continuation.roller_Q, continuation.roller_film, continuation.roller_loaded_mask, ...
+    [params.bearing(2).n params.bearing(2).stage4A_slice_count], 'roller');
+end
+
+function validate_contact_grid(Q, film, loaded_mask, expected_size, bearing_name)
+if isempty(Q) || ~isequal(size(Q), expected_size) || any(~isfinite(Q(:)))
+    error('Stage9B2R:ContinuationLoadGrid', '%s continuation contact loads have an invalid grid.', bearing_name);
+end
+if ~islogical(loaded_mask) || ~isequal(size(loaded_mask), expected_size) || ~isequal(loaded_mask, Q > 0)
+    error('Stage9B2R:ContinuationMaskGrid', '%s continuation loaded mask does not match its contact grid.', bearing_name);
+end
+if ~isequal(size(film), expected_size) || any(~isfinite(film(loaded_mask))) || any(film(loaded_mask) <= 0)
+    error('Stage9B2R:ContinuationFilmGrid', '%s continuation film is invalid at loaded contacts.', bearing_name);
+end
+end
+
+function allowed = legacy_cold_start_allowed(checkpoint, cfg)
+allowed = checkpoint.status == "budget_exhausted" && checkpoint.completed_case_count == 3 && checkpoint.next_case_index == 4 && ...
+    numel(cfg.temperature_list_C) == 4 && cfg.temperature_list_C(4) == 100 && checkpoint.case_records(3).meta.T_oil_C == 80 && ...
+    ~checkpoint.case_records(3).resume_state.valid;
+if allowed
+    for index = 1:3
+        allowed = allowed && checkpoint.case_records(index).meta.status == "completed" && case_record_passes(checkpoint.case_records(index));
+    end
+end
+end
+
+function initialization = legacy_cold_start_initialization(previous_temperature_C)
+initialization = struct('continuation_used', false, 'continued_from_temperature_C', previous_temperature_C, ...
+    'cold_start_fallback_used', true, 'q0_source', "checkpoint_missing_continuation_cold_start", ...
+    'thermal_state_source', "current_oil_temperature", 'modal_full_fallback_used', false);
+end
+
+function record = continuation_failure_record(record, ME, temperature_C)
+record.meta.status = "failed"; record.meta.completed_at = datetime('now');
+record.error = struct('identifier', string(ME.identifier), 'message', string(ME.message), ...
+    'function_name', string(ME.stack(1).name), 'temperature_C', temperature_C, ...
+    'outer_iteration', NaN, 'mechanical_load_step', NaN, 'newton_iteration', NaN);
 end
