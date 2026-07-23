@@ -245,18 +245,33 @@ CR = 0.5*(CRr + CRr.');
 CF = 0.5*(CFr + CFr.');
 CE = 0.5*(CEr + CEr.');
 CT = CR + CF + CE;
-mode_index = 1:tracked_mode_count;
-modal_mass = diag(Mr(mode_index, mode_index)).';
-mode_omega = omega(mode_index).';
-if any(~isfinite(modal_mass)) || any(modal_mass <= 0)
-    damping_runtime_state_missing('The retained modal masses are not positive.');
+n_track = 6;
+mode_index = 1:n_track;
+omega6 = reshape(omega(mode_index), 1, n_track);
+modal_mass6 = reshape(diag(Mr(mode_index, mode_index)), 1, n_track);
+c_rayleigh_diag6 = reshape(diag(CR(mode_index, mode_index)), 1, n_track);
+c_foundation_diag6 = reshape(diag(CF(mode_index, mode_index)), 1, n_track);
+c_ehl_diag6 = reshape(diag(CE(mode_index, mode_index)), 1, n_track);
+denominator6 = 2 .* omega6 .* modal_mass6;
+if ~isequal(size(omega6), [1 n_track]) || ~isequal(size(modal_mass6), [1 n_track]) || ...
+        ~isequal(size(c_rayleigh_diag6), [1 n_track]) || ~isequal(size(c_foundation_diag6), [1 n_track]) || ...
+        ~isequal(size(c_ehl_diag6), [1 n_track]) || ~isequal(size(denominator6), [1 n_track])
+    damping_audit_vector_shape_error('The six-mode damping inputs must be row vectors.');
+end
+if ~isreal(omega6) || ~isreal(modal_mass6) || ~isreal(denominator6) || ...
+        any(~isfinite([omega6 modal_mass6 c_rayleigh_diag6 c_foundation_diag6 c_ehl_diag6 denominator6])) || ...
+        any(omega6 <= 0) || any(modal_mass6 <= 0) || any(denominator6 <= 0)
+    damping_runtime_state_missing('The six-mode damping inputs are invalid.');
 end
 
-denominator = 2*mode_omega.*modal_mass;
-zeta_rayleigh = diag(CR(mode_index, mode_index)).'/denominator;
-zeta_foundation = diag(CF(mode_index, mode_index)).'/denominator;
-zeta_ehl = diag(CE(mode_index, mode_index)).'/denominator;
+zeta_rayleigh = c_rayleigh_diag6 ./ denominator6;
+zeta_foundation = c_foundation_diag6 ./ denominator6;
+zeta_ehl = c_ehl_diag6 ./ denominator6;
 zeta_total = zeta_rayleigh + zeta_foundation + zeta_ehl;
+if ~isequal(size(zeta_rayleigh), [1 n_track]) || ~isequal(size(zeta_foundation), [1 n_track]) || ...
+        ~isequal(size(zeta_ehl), [1 n_track]) || ~isequal(size(zeta_total), [1 n_track])
+    damping_audit_vector_shape_error('The six-mode damping contributions must be row vectors.');
+end
 component_zeta = [zeta_rayleigh; zeta_foundation; zeta_ehl];
 if any(~isfinite([zeta_rayleigh zeta_foundation zeta_ehl zeta_total])) || any(zeta_total <= 0) || ...
         any(component_zeta < -1e-12*max(1, abs(zeta_total)), 'all')
@@ -264,6 +279,14 @@ if any(~isfinite([zeta_rayleigh zeta_foundation zeta_ehl zeta_total])) || any(ze
 end
 
 ehl_fraction = zeta_ehl./zeta_total;
+zeta_identity_residual = max(abs(zeta_total-zeta_rayleigh-zeta_foundation-zeta_ehl));
+if ~isequal(size(ehl_fraction), [1 n_track])
+    damping_audit_vector_shape_error('The six-mode EHL fractions must be a row vector.');
+end
+if zeta_identity_residual > 1e-10*max(1, max(abs(zeta_total))) || ...
+        max(abs(ehl_fraction-zeta_ehl./zeta_total)) > 1e-12
+    damping_runtime_state_missing('The six-mode damping identities are inconsistent.');
+end
 trace_rayleigh = trace(CR);
 trace_foundation = trace(CF);
 trace_ehl = trace(CE);
@@ -315,4 +338,8 @@ end
 
 function damping_runtime_state_missing(message)
 error('DAMPING_RUNTIME_STATE_MISSING', '%s', message);
+end
+
+function damping_audit_vector_shape_error(message)
+error('DAMPING_AUDIT_VECTOR_SHAPE_ERROR', '%s', message);
 end
