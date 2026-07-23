@@ -3,7 +3,7 @@ function modal = build_temperature_modal_basis(model_cache, stiffness_results, d
 
 modal = empty_modal();
 validate_inputs(model_cache, stiffness_results, damping_results, shared_reference20, cfg);
-[M_t, K_t, C_ehl_t, C_foundation_t, G_t] = current_transverse_matrices(model_cache, stiffness_results, damping_results);
+[M_t, K_t, C_ehl_t, C_foundation_t, G_t, C_ehl_ball_t, C_ehl_roller_t] = current_transverse_matrices(model_cache, stiffness_results, damping_results);
 Phi30 = shared_reference20.Phi_reference30;
 [Phi_current30, frequency30_Hz, lambda30, ~, ~, ritz_error, ritz_mass_error] = ritz_modes(Phi30, M_t, K_t);
 [ratio_x, ratio_y] = effective_mass_ratios(Phi_current30, M_t, model_cache.transverse_dofs);
@@ -32,6 +32,12 @@ modal.K_r = Phi_t'*K_t*Phi_t;
 modal.C_rayleigh_r = Phi_t'*shared_reference20.C_rayleigh_reference_t*Phi_t;
 modal.C_foundation_r = Phi_t'*C_foundation_t*Phi_t;
 modal.C_ehl_r = Phi_t'*C_ehl_t*Phi_t;
+modal.C_ehl_ball_r = Phi_t'*C_ehl_ball_t*Phi_t;
+modal.C_ehl_roller_r = Phi_t'*C_ehl_roller_t*Phi_t;
+if norm(modal.C_ehl_r-modal.C_ehl_ball_r-modal.C_ehl_roller_r, 'fro')/max(1, norm(modal.C_ehl_r, 'fro')) > 1e-12
+    error('SEPARATE_EHL_COMPONENTS_NOT_AVAILABLE_AT_MAPPING', ...
+        'The ball and roller EHL reduced matrices do not reconstruct the existing total EHL matrix.');
+end
 modal.C_dissipative_r = modal.C_rayleigh_r + modal.C_foundation_r + modal.C_ehl_r;
 modal.G_r = Phi_t'*G_t*Phi_t;
 modal.final_ratio_x = ratio_x(retained); modal.final_ratio_y = ratio_y(retained);
@@ -52,6 +58,7 @@ modal = struct('temperature_C',NaN,'strategy_used','','full_modal_fallback_used'
     'reference_subspace_count',0,'retained_mode_count',0,'retained_mode_indices',zeros(0,1),'Phi_t',zeros(0,0), ...
     'mode_shapes_full',zeros(0,0),'frequency_Hz',zeros(0,1),'frequency_full_Hz',zeros(0,1),'omega_rad_s',zeros(0,1), ...
     'M_r',zeros(0,0),'K_r',zeros(0,0),'C_rayleigh_r',zeros(0,0),'C_foundation_r',zeros(0,0),'C_ehl_r',zeros(0,0), ...
+    'C_ehl_ball_r',zeros(0,0),'C_ehl_roller_r',zeros(0,0), ...
     'C_dissipative_r',zeros(0,0),'G_r',zeros(0,0),'effective_mass_x',zeros(0,1),'effective_mass_y',zeros(0,1), ...
     'final_ratio_x',NaN,'final_ratio_y',NaN,'mass_orthogonality_error',NaN,'stiffness_diagonalization_error',NaN, ...
     'frequency_consistency_error',NaN,'frequency_tolerance',NaN,'maximum_ritz_backward_error',NaN, ...
@@ -81,12 +88,15 @@ if cfg.modal.minimum_mode_count ~= 12 || cfg.modal.preferred_mode_count ~= 22 ||
 end
 end
 
-function [M_t, K_t, C_ehl_t, C_foundation_t, G_t] = current_transverse_matrices(cache, stiffness, damping)
+function [M_t, K_t, C_ehl_t, C_foundation_t, G_t, C_ehl_ball_t, C_ehl_roller_t] = current_transverse_matrices(cache, stiffness, damping)
 K_bearing = cache.B_ball'*stiffness(1).K_local*cache.B_ball + cache.B_roller'*stiffness(2).K_local*cache.B_roller;
 C_ehl = cache.B_ball'*damping(1).C_local*cache.B_ball + cache.B_roller'*damping(2).C_local*cache.B_roller;
+C_ehl_ball = cache.B_ball'*damping(1).C_local*cache.B_ball;
+C_ehl_roller = cache.B_roller'*damping(2).C_local*cache.B_roller;
 dofs = cache.transverse_dofs;
 M_t = cache.M(dofs,dofs); K_t = (cache.K_structure + K_bearing); K_t = K_t(dofs,dofs);
 C_ehl_t = C_ehl(dofs,dofs); C_foundation_t = cache.C_foundation(dofs,dofs); G_t = cache.G_unit(dofs,dofs);
+C_ehl_ball_t = C_ehl_ball(dofs,dofs); C_ehl_roller_t = C_ehl_roller(dofs,dofs);
 end
 
 function [Phi, frequency_Hz, lambda, M30, K30, backward_error, mass_error] = ritz_modes(Phi_reference, M, K)

@@ -50,6 +50,7 @@ try
     record.runtime.modal_reduction_s = toc(modal_timer);
     if ~modal.pass, error('Stage9B:ModalGate', 'The projected temperature modal basis did not pass its required gates.'); end
     record.audit.damping_contribution = damping_contribution_snapshot(modal, cfg.modal.tracked_mode_count);
+    record.audit.damping_matrix_contribution = damping_matrix_contribution_snapshot(modal, record.audit.damping_contribution);
 
     if case_index == 1
         tracking = track_thermal_modes(reference20.mode_shapes_full(:,1:cfg.modal.tracked_mode_count), ...
@@ -342,4 +343,102 @@ end
 
 function damping_audit_vector_shape_error(message)
 error('DAMPING_AUDIT_VECTOR_SHAPE_ERROR', '%s', message);
+end
+
+function snapshot = damping_matrix_contribution_snapshot(modal, modal_contribution)
+required = {'M_r','C_rayleigh_r','C_foundation_r','C_ehl_r','C_ehl_ball_r','C_ehl_roller_r','retained_mode_count'};
+if ~isstruct(modal) || ~all(isfield(modal, required)) || ~isstruct(modal_contribution) || ...
+        ~isfield(modal_contribution, 'available') || ~isscalar(modal_contribution.available) || ...
+        ~modal_contribution.available || ~isfield(modal_contribution, 'classification') || ...
+        ~isstring(modal_contribution.classification) || ~isscalar(modal_contribution.classification)
+    damping_runtime_state_missing('The retained modal damping matrix state is incomplete.');
+end
+
+n = modal.retained_mode_count;
+Mr = modal.M_r;
+CRr = modal.C_rayleigh_r;
+CFr = modal.C_foundation_r;
+CEr = modal.C_ehl_r;
+CEBr = modal.C_ehl_ball_r;
+CERr = modal.C_ehl_roller_r;
+if ~isscalar(n) || n ~= floor(n) || n < 6 || ~isequal(size(Mr), [n n]) || ...
+        ~isequal(size(CRr), [n n]) || ~isequal(size(CFr), [n n]) || ...
+        ~isequal(size(CEr), [n n]) || ~isequal(size(CEBr), [n n]) || ~isequal(size(CERr), [n n]) || ...
+        ~isreal(Mr) || ~isreal(CRr) || ~isreal(CFr) || ~isreal(CEr) || ~isreal(CEBr) || ~isreal(CERr) || ...
+        any(~isfinite([Mr(:); CRr(:); CFr(:); CEr(:); CEBr(:); CERr(:)]))
+    damping_runtime_state_missing('The retained modal damping matrices are invalid.');
+end
+
+if symmetry_error(Mr) > 1e-10 || symmetry_error(CRr) > 1e-10 || symmetry_error(CFr) > 1e-10 || ...
+        symmetry_error(CEr) > 1e-10 || symmetry_error(CEBr) > 1e-10 || symmetry_error(CERr) > 1e-10 || ...
+        ~positive_definite(Mr) || ~positive_semidefinite(CRr) || ~positive_semidefinite(CFr) || ...
+        ~positive_semidefinite(CEr) || ~positive_semidefinite(CEBr) || ~positive_semidefinite(CERr)
+    damping_runtime_state_missing('The retained modal damping matrices failed the audit gate.');
+end
+
+CR = 0.5*(CRr + CRr.');
+CF = 0.5*(CFr + CFr.');
+CE = 0.5*(CEr + CEr.');
+CEB = 0.5*(CEBr + CEBr.');
+CER = 0.5*(CERr + CERr.');
+CEtotal = CEB + CER;
+ehl_decomposition_residual = norm(CE-CEtotal, 'fro')/max(1, norm(CE, 'fro'));
+if ehl_decomposition_residual > 1e-12
+    error('EHL_BALL_ROLLER_DECOMPOSITION_MISMATCH', ...
+        'The reduced ball and roller EHL matrices do not reconstruct the total EHL matrix.');
+end
+
+CT = CR + CF + CE;
+total_decomposition_residual = norm(CT-CR-CF-CE, 'fro')/max(1, norm(CT, 'fro'));
+if ~positive_semidefinite(CT) || total_decomposition_residual > 1e-12
+    damping_runtime_state_missing('The retained modal total damping matrix is invalid.');
+end
+
+norm_rayleigh = norm(CR, 'fro');
+norm_foundation = norm(CF, 'fro');
+norm_ehl_ball = norm(CEB, 'fro');
+norm_ehl_roller = norm(CER, 'fro');
+norm_ehl_total = norm(CE, 'fro');
+norm_total = norm(CT, 'fro');
+if ~all(isfinite([norm_rayleigh norm_foundation norm_ehl_ball norm_ehl_roller norm_ehl_total norm_total])) || norm_total <= 0
+    damping_runtime_state_missing('The retained modal damping norms are invalid.');
+end
+
+RC_ehl_total = norm_ehl_total/norm_total;
+RC_ehl_ball = norm_ehl_ball/norm_total;
+RC_ehl_roller = norm_ehl_roller/norm_total;
+if ~all(isfinite([RC_ehl_total RC_ehl_ball RC_ehl_roller]))
+    damping_runtime_state_missing('The retained modal damping ratios are invalid.');
+end
+
+if RC_ehl_total < 0.10
+    frobenius_classification = "LOW_EHL_MATRIX_INFLUENCE";
+elseif RC_ehl_total <= 0.50
+    frobenius_classification = "MODERATE_EHL_MATRIX_INFLUENCE";
+else
+    frobenius_classification = "HIGH_EHL_MATRIX_INFLUENCE_REQUIRES_MODEL_REVIEW";
+end
+
+if modal_contribution.classification == "HIGH_EHL_SYSTEM_INFLUENCE_REQUIRES_MODEL_REVIEW" || RC_ehl_total > 0.50
+    combined_review_decision = "EHL_DAMPING_MODEL_REVIEW_REQUIRED";
+elseif modal_contribution.classification == "LOW_EHL_SYSTEM_INFLUENCE" && RC_ehl_total < 0.10
+    combined_review_decision = "EHL_DAMPING_SYSTEM_INFLUENCE_LOW";
+else
+    combined_review_decision = "EHL_DAMPING_SENSITIVITY_ANALYSIS_REQUIRED";
+end
+
+snapshot = struct('available', false, 'coordinate_space', "MASS_NORMALIZED_REDUCED_MODAL", ...
+    'gyroscopic_term_excluded', true, 'retained_mode_count', n, ...
+    'C_rayleigh_r', CR, 'C_foundation_r', CF, 'C_ehl_ball_r', CEB, 'C_ehl_roller_r', CER, ...
+    'C_ehl_total_r', CE, 'C_total_r', CT, ...
+    'norm_rayleigh_fro', norm_rayleigh, 'norm_foundation_fro', norm_foundation, ...
+    'norm_ehl_ball_fro', norm_ehl_ball, 'norm_ehl_roller_fro', norm_ehl_roller, ...
+    'norm_ehl_total_fro', norm_ehl_total, 'norm_total_fro', norm_total, ...
+    'RC_ehl_total', RC_ehl_total, 'RC_ehl_ball', RC_ehl_ball, 'RC_ehl_roller', RC_ehl_roller, ...
+    'ehl_decomposition_residual', ehl_decomposition_residual, ...
+    'total_decomposition_residual', total_decomposition_residual, ...
+    'frobenius_classification', frobenius_classification, ...
+    'combined_review_decision', combined_review_decision, 'source_note', ...
+    "Independent Frobenius-norm audit of Rayleigh, foundation, ball-bearing EHL and roller-bearing EHL damping matrices in the common mass-normalized reduced modal space. The gyroscopic term is excluded because it is non-dissipative. The matrices are copied from the existing runtime state and are not recomputed or used to alter the dynamic solution.");
+snapshot.available = true;
 end

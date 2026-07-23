@@ -3,7 +3,7 @@ function cfg = thermal_outer_loop_config()
 
 cfg = struct();
 cfg.version = 'thermal-outer-loop-v1';
-cfg.schema_version = 'case-schema-v2-damping-audit';
+cfg.schema_version = 'case-schema-v3-damping-matrix-audit';
 cfg.checkpoint_version = 'checkpoint-v1';
 cfg.required_branch = 'thermal-outer-loop-stage1-v1';
 cfg.minimum_required_commit = '66207b4932ea3005642c694a9aa06ab3361e2f08';
