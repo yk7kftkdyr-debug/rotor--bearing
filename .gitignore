@@ -1,2 +1,3 @@
 .worktrees/
 results/thermal_outer_loop/
+results/thermal_equivalent_damping_frequency_domain/thermal_4T_frequency_domain_results.mat
