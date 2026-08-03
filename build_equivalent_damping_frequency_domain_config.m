@@ -50,4 +50,24 @@ cfg.result_txt_name = ...
     'thermal_4T_frequency_domain_summary.txt';
 
 cfg.mapping_validation_required = true;
+
+cfg.damping_modes.legacy = 'legacy_ehl_audit';
+cfg.damping_modes.formal = 'fixed_equivalent_system';
+
+cfg.damping_contract.legacy_components = ...
+    {'C_rayleigh_legacy','C_foundation','C_ehl_old'};
+cfg.damping_contract.formal_components = ...
+    {'C_foundation','C_rayleigh_ref'};
+cfg.damping_contract.legacy_rayleigh_in_formal = false;
+cfg.damping_contract.old_ehl_in_formal = false;
+cfg.damping_contract.gyroscopic_term_is_separate = true;
+cfg.damping_contract.runtime_equivalence_stage = 'Stage C';
+cfg.damping_contract.runtime_equivalence_pending = true;
+cfg.damping_contract.stage_b_verification_scope = ...
+    'SOURCE_AND_SYNTHETIC_CONTRACT';
+cfg.damping_contract.legacy_audit_artifact_available = false;
+cfg.damping_contract.runtime_equivalence_gate = ...
+    'RUNTIME_LEGACY_DAMPING_EQUIVALENCE_CONFIRMED';
+cfg.damping_contract.runtime_equivalence_failure_status = ...
+    'RUNTIME_LEGACY_DAMPING_EQUIVALENCE_FAILED';
 end
