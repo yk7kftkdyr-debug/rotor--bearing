@@ -7,14 +7,19 @@ addpath(repository_root);
 artifact_path = fullfile(repository_root,'results', ...
     'thermal_equivalent_damping_frequency_domain', ...
     'thermal_4T_frequency_domain_results.mat');
-artifact = load(artifact_path); baseline = artifact.results;
+artifact = load(artifact_path);
+accepted = validate_stage_d_four_temperature_results(artifact);
+assert(accepted.passed && accepted.stage_d_complete, ...
+    'StageD:AcceptedCanonicalRequired', ...
+    'The Stage D fixture requires an accepted, completed canonical artifact.');
+baseline = pre_stage_d_fixture(artifact.results);
 
 test_bearing_statistics();
 test_case_validation(baseline);
 test_strict_continuation_resume_and_finalize(baseline);
 test_failure_consumes_attempt(baseline);
 test_frozen_stage_c_protection(baseline);
-test_canonical_transaction(artifact_path,baseline);
+test_canonical_transaction(baseline);
 test_source_scope(repository_root);
 fprintf('STAGE_D_FOUR_TEMPERATURE_STATIC_STATES_PASSED\n');
 end
@@ -146,13 +151,13 @@ validation_T20 = validate_stage_d_four_temperature_results(struct('results',tamp
 assert(~validation_T20.passed && ~validation_T20.frozen_damping_unchanged);
 end
 
-function test_canonical_transaction(artifact_path,baseline)
+function test_canonical_transaction(baseline)
 temporary_directory = tempname;
 mkdir(temporary_directory);
 cleanup = onCleanup(@() rmdir(temporary_directory,'s'));
 canonical = fullfile(temporary_directory, ...
     'thermal_4T_frequency_domain_results.mat');
-copyfile(artifact_path,canonical);
+results = baseline; save(canonical,'results');
 directory_audit = stage_d_canonical_transaction('audit',canonical);
 assert(directory_audit.passed);
 payload = struct('temperature_C',50, ...
@@ -348,6 +353,28 @@ value = struct('cold_clearance_m',cold, ...
     'film_or_contact_correction_m',0, ...
     'working_clearance_m',thermal.working_clearance, ...
     'film_or_contact_correction_available',false);
+end
+
+function baseline = pre_stage_d_fixture(completed)
+% Derive the test baseline in memory; never rewrite the accepted canonical.
+baseline = completed;
+baseline.static = rmfield(baseline.static,{'T50','T80','T100'});
+baseline.meta = rmfield(baseline.meta,'stage_d_source_commit');
+baseline.validation = rmfield(baseline.validation,'stage_d');
+baseline.progress = rmfield(baseline.progress,{ ...
+    'stage_d_T50_attempted','stage_d_T80_attempted', ...
+    'stage_d_T100_attempted','stage_d_T50_complete', ...
+    'stage_d_T80_complete','stage_d_T100_complete', ...
+    'stage_d_static_states_complete','first_failed_temperature_C', ...
+    'failure_reason','failure_gate','current_attempt_temperature_C', ...
+    'current_attempt_started_at','current_attempt_process_id', ...
+    'current_attempt_session_id','last_solver_process_id', ...
+    'last_solver_session_id','stage_d_transaction_sequence'});
+baseline.progress.stage_d_complete = false;
+baseline.progress.last_completed_gate = 'STAGE_C_DAMPING_ENVELOPE';
+baseline.decision = struct('status', ...
+    'FIXED_EQUIVALENT_DAMPING_ENVELOPE_ACCEPTED','allow_stage_d',true, ...
+    'stage_d_executed',false);
 end
 
 function assert_error(callback,identifier)

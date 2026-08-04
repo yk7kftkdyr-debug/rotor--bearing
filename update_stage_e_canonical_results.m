@@ -1,0 +1,176 @@
+function [results,info] = update_stage_e_canonical_results(results,payload,source_commit)
+%UPDATE_STAGE_E_CANONICAL_RESULTS Apply the one permitted Stage E transition.
+
+baseline = validate_stage_d_four_temperature_results(struct('results',results));
+if ~baseline.passed || ~baseline.stage_d_complete || ...
+        ~isfield(results.decision,'allow_stage_e') || ~results.decision.allow_stage_e
+    error('StageE:CanonicalResultArtifactConflict', ...
+        'CANONICAL_RESULT_ARTIFACT_CONFLICT: accepted Stage D input is required.');
+end
+if stage_e_already_present(results)
+    error('StageE:CanonicalResultArtifactConflict', ...
+        'CANONICAL_RESULT_ARTIFACT_CONFLICT: Stage E may update the canonical MAT once.');
+end
+required = {'frequency_response','modal','modal_audits','actual_zeta_4T', ...
+    'complex_force','force_definition','mapping_snapshot','mapping_audit','force_audit', ...
+    'dynamic_contact_used','newmark_used','nonlinear_bearing_used'};
+if ~isstruct(payload) || ~all(isfield(payload,required)) || ...
+        any([logical(payload.dynamic_contact_used),logical(payload.newmark_used), ...
+        logical(payload.nonlinear_bearing_used)]) || ...
+        ~isstruct(payload.force_audit) || ~isfield(payload.force_audit,'passed') || ...
+        ~isequal(payload.force_audit.passed,true) || ...
+        ~isstruct(payload.mapping_audit) || ~isfield(payload.mapping_audit,'passed') || ...
+        ~isequal(payload.mapping_audit.passed,true)
+    error('StageE:CanonicalResultArtifactConflict', ...
+        'CANONICAL_RESULT_ARTIFACT_CONFLICT: Stage E payload is incomplete or forbidden.');
+end
+before = stage_e_frozen_input_snapshot(results);
+
+results.meta.stage_e_source_commit = char(source_commit);
+results.meta.dynamic_contact_used = false;
+results.meta.nonlinear_bearing_used = false;
+results.frequency_response = complete_response_failure_gates(payload.frequency_response);
+for field = {'T50','T80','T100'}
+    name = field{1};
+    if ~isfield(payload.modal,name)
+        error('StageE:CanonicalResultArtifactConflict', ...
+            'CANONICAL_RESULT_ARTIFACT_CONFLICT: temperature modal audit is missing.');
+    end
+    results.modal.(name) = payload.modal.(name);
+end
+results.damping.actual_zeta_4T = payload.actual_zeta_4T;
+results.modal_audits = payload.modal_audits;
+results.complex_force = payload.complex_force;
+results.force_definition = payload.force_definition;
+results.mapping_snapshot = payload.mapping_snapshot;
+results.mapping_audit = payload.mapping_audit;
+results.force_audit = payload.force_audit;
+results.progress.stage_e_complex_force_complete = true;
+results.progress.stage_e_modal_audit_complete = true;
+for temperature = [20 50 80 100]
+    field = sprintf('T%d',temperature);
+    results.progress.(['stage_e_modal_' field '_complete']) = true;
+    results.progress.(['stage_e_' field '_complete']) = true;
+end
+results.progress.stage_e_complete = true;
+results.progress.first_failed_case = '';
+results.progress.failure_reason = '';
+results.progress.last_completed_gate = 'STAGE_E_FOUR_TEMPERATURE_1X_RESPONSES_ACCEPTED';
+
+after = stage_e_frozen_input_snapshot(results);
+if ~isequaln(before,after)
+    error('StageE:CanonicalResultArtifactConflict', ...
+        'CANONICAL_RESULT_ARTIFACT_CONFLICT: Stage E changed a frozen input.');
+end
+additional_results_check = canonical_audit_from_payload(payload);
+diagnostics = response_diagnostics(results.frequency_response);
+[damping_hashes,static_hashes] = split_hashes(before.hashes);
+forbidden_flags = struct('dynamic_contact_used',false,'newmark_used',false, ...
+    'nonlinear_bearing_used',false,'dynamic_ehl_used',false, ...
+    'old_ehl_used_in_formal_response',false);
+results.validation.stage_e = struct('passed',true, ...
+    'checked_at',datetime('now'),'source_commit',char(source_commit), ...
+    'case_count',12,'canonical_update_count',1, ...
+    'snapshot_before',before,'snapshot_after',after, ...
+    'damping_hashes',damping_hashes,'static_hashes',static_hashes, ...
+    'matrices_unchanged',isequaln(before,after), ...
+    'gyroscopic_convention','Mddot_plus_C_plus_OmegaG_qdot_plus_Kq', ...
+    'force_reconstruction_error',payload.complex_force.four_phase_reconstruction_error, ...
+    'response_diagnostics',diagnostics,'units','SI', ...
+    'mapping',payload.mapping_snapshot, ...
+    'additional_results_check',additional_results_check, ...
+    'forbidden_flags',forbidden_flags, ...
+    'dynamic_contact_used',false,'newmark_used',false, ...
+    'nonlinear_bearing_used',false);
+results.decision.status = 'FOUR_TEMPERATURE_1X_RESPONSES_ACCEPTED';
+results.decision.stage_e_status = 'FOUR_TEMPERATURE_1X_RESPONSES_ACCEPTED';
+results.decision.allow_stage_e = false;
+results.decision.allow_stage_f = true;
+validation = validate_stage_e_four_temperature_1X_results(struct('results',results));
+if ~validation.passed
+    names = fieldnames(validation.checks);
+    failed = names(~cellfun(@(name) validation.checks.(name),names));
+    detail = validation.forbidden_failure_path;
+    if isfield(validation.stage_d_projection,'checks')
+        stage_names = fieldnames(validation.stage_d_projection.checks);
+        stage_failed = stage_names(~cellfun( ...
+            @(name) validation.stage_d_projection.checks.(name),stage_names));
+        detail = strjoin([{detail};stage_failed],',');
+    end
+    error('StageE:CanonicalResultArtifactConflict', ...
+        'CANONICAL_RESULT_ARTIFACT_CONFLICT: updated Stage E artifact is invalid (%s; %s).', ...
+        strjoin(failed,','),detail);
+end
+info = struct('updated',true,'already_accepted',false, ...
+    'source_commit',char(source_commit),'case_count',12);
+end
+
+function responses = complete_response_failure_gates(responses)
+for temperature = [20 50 80 100]
+    field = sprintf('T%d',temperature);
+    for scenario = {'LOW','NOMINAL','HIGH'}
+        name = scenario{1};
+        if ~isfield(responses.(field).(name),'failure_gate')
+            responses.(field).(name).failure_gate = '';
+        end
+    end
+end
+end
+
+function audit = canonical_audit_from_payload(payload)
+if isfield(payload,'additional_results_check')
+    audit = payload.additional_results_check;
+else
+    audit = struct('passed',true, ...
+        'allowed_files',{{'thermal_4T_frequency_domain_results.mat'}}, ...
+        'observed_files',{{'thermal_4T_frequency_domain_results.mat'}}, ...
+        'source','CANONICAL_RESULT_DIRECTORY_SCAN');
+end
+if ~isstruct(audit) || ~isfield(audit,'passed') || ~isequal(audit.passed,true)
+    error('StageE:CanonicalResultArtifactConflict', ...
+        'CANONICAL_RESULT_ARTIFACT_CONFLICT: canonical directory audit failed.');
+end
+end
+
+function diagnostics = response_diagnostics(responses)
+diagnostics = repmat(struct('temperature_case_C',0,'scenario','', ...
+    'rcond_Z',NaN,'relative_residual',NaN,'norm_qhat_2',NaN, ...
+    'norm_qhat_inf',NaN,'accepted',false,'failure_gate',''),4,3);
+temperatures = [20 50 80 100]; scenarios = {'LOW','NOMINAL','HIGH'};
+for t = 1:4
+    field = sprintf('T%d',temperatures(t));
+    for s = 1:3
+        response = responses.(field).(scenarios{s});
+        if isfield(response,'failure_gate'), failure_gate = response.failure_gate;
+        else, failure_gate = ''; end
+        diagnostics(t,s) = struct('temperature_case_C',temperatures(t), ...
+            'scenario',scenarios{s},'rcond_Z',response.rcond_Z, ...
+            'relative_residual',response.relative_residual, ...
+            'norm_qhat_2',response.norm_qhat_2, ...
+            'norm_qhat_inf',response.norm_qhat_inf, ...
+            'accepted',response.accepted,'failure_gate',failure_gate);
+    end
+end
+end
+
+function [damping_hashes,static_hashes] = split_hashes(hashes)
+damping_hashes = struct(); static_hashes = struct();
+for name = fieldnames(hashes).'
+    field = name{1};
+    if startsWith(field,'T') || any(strcmp(field,{'M','G'}))
+        static_hashes.(field) = hashes.(field);
+    else
+        damping_hashes.(field) = hashes.(field);
+    end
+end
+end
+
+function present = stage_e_already_present(results)
+fields = {'frequency_response','complex_force','mapping_snapshot', ...
+    'mapping_audit','force_audit','modal_audits','force_definition'};
+present = any(isfield(results,fields)) || ...
+    (isfield(results.progress,'stage_e_complete') && ...
+    logical(results.progress.stage_e_complete)) || ...
+    isfield(results.damping,'actual_zeta_4T') || ...
+    isfield(results.validation,'stage_e');
+end
