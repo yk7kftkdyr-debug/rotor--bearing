@@ -11,51 +11,56 @@ if ~isscalar(Omega) || ~isscalar(omega) || ~isfinite(Omega) || ~isfinite(omega) 
     error('StageE:DynamicSystem','Inputs must define finite square full-order matrices and force.');
 end
 Z = K-omega^2*M+1i*omega*(C+Omega*G);
-rcond_Z = rcond(Z);
 warning_state = warning; cleanup = onCleanup(@() warning(warning_state));
 warning('on','all');
 lastwarn('');
-solver_output = evalc('qhat_full = Z\Fhat(:);');
+Fhat = Fhat(:);
+DZ = [];
+qhat_full = [];
+solver_output = evalc("DZ = decomposition(Z,'lu'); qhat_full = DZ\Fhat;");
 [warning_message,warning_identifier] = lastwarn;
-finite_solution = all(isfinite(qhat_full));
-if finite_solution
-    relative_residual = norm(Z*qhat_full-Fhat(:))/max(norm(Fhat(:)),eps);
-else
-    relative_residual = Inf;
-end
+solver_warning_record = struct('identifier',warning_identifier, ...
+    'message',warning_message);
+cfg = build_equivalent_damping_frequency_domain_config();
+options = cfg.stage_e.solve_quality;
+options.omega_source_match = true;
+options.Omega_source_match = true;
+options.solver_validator_Z_relative_difference = 0;
+options.solver_validator_diagnostic_relative_difference = 0;
+quality = evaluate_stage_e_linear_solve_quality( ...
+    Z,Fhat,qhat_full,DZ,options,solver_warning_record);
+qhat_full = quality.qhat_full;
 norm_qhat_2 = norm(qhat_full,2);
 norm_qhat_inf = norm(qhat_full,inf);
-if ~finite_solution
-    failure_gate = 'FREQUENCY_RESPONSE_NONFINITE_FAILED';
-elseif ~isfinite(rcond_Z) || rcond_Z < 1e-14
-    failure_gate = 'SEVERELY_ILL_CONDITIONED_DYNAMIC_STIFFNESS';
-elseif ~(relative_residual <= 1e-8)
-    failure_gate = 'FREQUENCY_RESPONSE_RESIDUAL_FAILED';
-elseif ~(norm_qhat_inf > 100*eps)
-    failure_gate = 'FREQUENCY_RESPONSE_NEAR_ZERO_FAILED';
-else
+if quality.accepted
     failure_gate = '';
+else
+    failure_gate = quality.solve_quality_gate;
 end
-accepted = isempty(failure_gate);
-if rcond_Z < 1e-14
+if quality.rcond_Z < options.rcond_hard_floor
     conditioning_flag = 'SEVERELY_ILL_CONDITIONED_DYNAMIC_STIFFNESS';
-elseif rcond_Z < 1e-10
+elseif quality.rcond_Z < 1e-10
     conditioning_flag = 'ILL_CONDITIONED_DYNAMIC_STIFFNESS';
 else
     conditioning_flag = 'WELL_CONDITIONED';
 end
 
-response = struct('qhat_full',qhat_full, ...
-    'rcond_Z',rcond_Z,'relative_residual',relative_residual, ...
-    'finite_solution',finite_solution,'norm_qhat_2',norm_qhat_2, ...
-    'norm_qhat_inf',norm_qhat_inf, ...
-    'conditioning_flag',conditioning_flag,'accepted',accepted, ...
-    'failure_gate',failure_gate, ...
-    'solver','backslash','solver_warning',struct('message',warning_message, ...
-    'identifier',warning_identifier,'output',solver_output), ...
-    'gyroscopic_sign_convention','Mddot_plus_C_plus_OmegaG_qdot_plus_Kq', ...
-    'gyroscopic_matrix_symmetrized',false,'omega_exc_rad_s',omega, ...
-    'Omega_rotor_rad_s',Omega);
+response = quality;
+response.normwise_backward_error_inf = quality.normwise_backward_error_inf;
+response.rhs_relative_residual = quality.rhs_relative_residual;
+response.relative_residual = quality.relative_residual;
+response.norm_qhat_2 = norm_qhat_2;
+response.norm_qhat_inf = norm_qhat_inf;
+response.conditioning_flag = conditioning_flag;
+response.failure_gate = failure_gate;
+response.solver = 'backslash';
+response.solver_warning = struct('message',warning_message, ...
+    'identifier',warning_identifier,'output',solver_output);
+response.gyroscopic_sign_convention = ...
+    'Mddot_plus_C_plus_OmegaG_qdot_plus_Kq';
+response.gyroscopic_matrix_symmetrized = false;
+response.omega_exc_rad_s = omega;
+response.Omega_rotor_rad_s = Omega;
 if isfield(case_info,'temperature_case_C'), response.temperature_case_C = case_info.temperature_case_C; end
 if isfield(case_info,'scenario'), response.scenario = case_info.scenario; end
 if isfield(case_info,'gyroscopic_sign_convention')

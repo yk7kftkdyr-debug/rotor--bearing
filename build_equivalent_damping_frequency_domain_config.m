@@ -39,6 +39,12 @@ cfg.nonlinearity_gate.caution_ratio = 0.20;
 cfg.nonlinearity_gate.error_limit = 0.10;
 cfg.nonlinearity_gate.harmonic_ratio_limit = 0.10;
 
+cfg.('stage_e').('solve_quality').('rcond_hard_floor') = 1e-14;
+cfg.('stage_e').('solve_quality').('backward_error_hard_limit') = 1e-12;
+cfg.('stage_e').('solve_quality').('rhs_residual_caution_limit') = 1e-8;
+cfg.('stage_e').('solve_quality').('max_iterative_refinement_steps') = 2;
+cfg.('stage_e').('solve_quality').('diagnostic_relative_match_tolerance') = 1e-12;
+
 cfg.result_directory = ...
     fullfile('results', ...
     'thermal_equivalent_damping_frequency_domain');
