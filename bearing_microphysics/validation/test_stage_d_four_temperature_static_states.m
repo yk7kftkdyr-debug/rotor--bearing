@@ -8,11 +8,12 @@ artifact_path = fullfile(repository_root,'results', ...
     'thermal_equivalent_damping_frequency_domain', ...
     'thermal_4T_frequency_domain_results.mat');
 artifact = load(artifact_path);
-accepted = validate_stage_d_four_temperature_results(artifact);
+completed = completed_stage_d_projection(artifact.results);
+accepted = validate_stage_d_four_temperature_results(struct('results',completed));
 assert(accepted.passed && accepted.stage_d_complete, ...
     'StageD:AcceptedCanonicalRequired', ...
     'The Stage D fixture requires an accepted, completed canonical artifact.');
-baseline = pre_stage_d_fixture(artifact.results);
+baseline = pre_stage_d_fixture(completed);
 
 test_bearing_statistics();
 test_case_validation(baseline);
@@ -355,8 +356,48 @@ value = struct('cold_clearance_m',cold, ...
     'film_or_contact_correction_available',false);
 end
 
+function projection = completed_stage_d_projection(results)
+% Recover the completed Stage D view in memory; never rewrite canonical.
+projection = results;
+for name = {'frequency_response','complex_force','force_definition', ...
+        'mapping_snapshot','mapping_audit','force_audit','modal_audits'}
+    if isfield(projection,name{1}), projection = rmfield(projection,name{1}); end
+end
+for name = {'T50','T80','T100'}
+    if isfield(projection.modal,name{1}), projection.modal = rmfield(projection.modal,name{1}); end
+end
+if isfield(projection.damping,'actual_zeta_4T')
+    projection.damping = rmfield(projection.damping,'actual_zeta_4T');
+end
+for name = {'stage_e_source_commit','dynamic_contact_used','nonlinear_bearing_used'}
+    if isfield(projection.meta,name{1}), projection.meta = rmfield(projection.meta,name{1}); end
+end
+if isfield(projection.validation,'stage_e')
+    projection.validation = rmfield(projection.validation,'stage_e');
+end
+projection.progress.stage_e_complete = false;
+projection.progress.last_completed_gate = 'STAGE_D_INDEPENDENT_RELOAD_ACCEPTED';
+for name = {'stage_e_complex_force_complete','stage_e_modal_T20_complete', ...
+        'stage_e_modal_T50_complete','stage_e_modal_T80_complete', ...
+        'stage_e_modal_T100_complete','stage_e_T100_complete', ...
+        'stage_e_T20_complete','stage_e_T50_complete','stage_e_T80_complete', ...
+        'stage_e_modal_audit_complete','first_failed_case'}
+    if isfield(projection.progress,name{1})
+        projection.progress = rmfield(projection.progress,name{1});
+    end
+end
+projection.decision.status = 'FOUR_TEMPERATURE_STATIC_STATES_ACCEPTED';
+projection.decision.stage_d_status = 'FOUR_TEMPERATURE_STATIC_STATES_ACCEPTED';
+projection.decision.allow_stage_e = true;
+for name = {'stage_e_status','allow_stage_f'}
+    if isfield(projection.decision,name{1})
+        projection.decision = rmfield(projection.decision,name{1});
+    end
+end
+end
+
 function baseline = pre_stage_d_fixture(completed)
-% Derive the test baseline in memory; never rewrite the accepted canonical.
+% Derive the Stage C test baseline in memory; never rewrite canonical.
 baseline = completed;
 baseline.static = rmfield(baseline.static,{'T50','T80','T100'});
 baseline.meta = rmfield(baseline.meta,'stage_d_source_commit');

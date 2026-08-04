@@ -38,6 +38,7 @@ test_orbit_phase_transmissibility_and_interface_metrics();
 test_near_zero_transmissibility_denominator();
 test_temperature_modal_audit_contract();
 test_canonical_T20_modal_regression();
+test_completed_stage_d_projection_preserves_frozen_inputs();
 test_four_temperature_three_scenario_schedule_and_frozen_inputs();
 test_stage_e_pure_contract_surface();
 test_stage_e_full_artifact_integration_contracts();
@@ -526,7 +527,8 @@ end
 
 function independent = stage_e_R2_read_only_T50_nominal_inputs(canonical)
 artifact = load(canonical);
-stage_d = validate_stage_d_four_temperature_results(artifact);
+stage_d = validate_stage_d_four_temperature_results( ...
+    struct('results',completed_stage_d_projection(artifact.results)));
 assert(isfield(artifact,'results') && stage_d.passed, ...
     'StageE:ProbeCanonicalBaseline', ...
     'Probe independence requires the accepted real canonical Stage D artifact.');
@@ -1025,11 +1027,37 @@ for k = 1:numel(required)
     assert(isfile(fullfile(repository_root,required{k})), ...
         'StageE:MissingPlannedAPI','Missing planned Stage E API: %s',required{k});
 end
+
 combined = fileread(fullfile(repository_root,required{3}));
 assert(isempty(regexpi(combined,'\<inv\s*\(','once')));
 assert(isempty(regexpi(combined,'\<pinv\s*\(','once')));
 assert(isempty(regexpi(combined,'\<newmark\w*\s*\(','once')));
 assert(isempty(regexpi(combined,'dynamic.*contact.*load|rolling.*element.*load','once')));
+end
+
+function test_completed_stage_d_projection_preserves_frozen_inputs
+% The real canonical is completed through Stage E.  Recover its strict Stage D
+% view in memory only, and prove every frozen Stage A--D datum is unchanged.
+repository_root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+artifact = load(fullfile(repository_root,'results', ...
+    'thermal_equivalent_damping_frequency_domain', ...
+    'thermal_4T_frequency_domain_results.mat'));
+before = stage_e_frozen_input_snapshot(artifact.results);
+projection = completed_stage_d_projection(artifact.results);
+after = stage_e_frozen_input_snapshot(projection);
+assert(isequaln(before,after),'StageE:StageDProjectionFrozenInputs', ...
+    'Stage D projection must preserve all frozen Stage A--D snapshot hashes.');
+assert(isequaln(projection.static,artifact.results.static));
+assert(isequaln(projection.damping.alpha,artifact.results.damping.alpha));
+assert(isequaln(projection.damping.beta,artifact.results.damping.beta));
+assert(isequaln(projection.damping.K_ref_20C, ...
+    artifact.results.damping.K_ref_20C));
+assert(isequaln(projection.modal.T20,artifact.results.modal.T20));
+assert(isequaln(projection.configuration,artifact.results.configuration));
+validation = validate_stage_d_four_temperature_results(struct('results',projection));
+assert(validation.passed && validation.stage_d_complete, ...
+    'StageE:StageDProjectionAcceptance', ...
+    'Projected completed Stage E canonical must satisfy the strict Stage D validator.');
 end
 
 function test_stage_e_full_artifact_integration_contracts
@@ -1485,11 +1513,51 @@ repository_root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
 artifact = load(fullfile(repository_root,'results', ...
     'thermal_equivalent_damping_frequency_domain', ...
     'thermal_4T_frequency_domain_results.mat'));
-stage_d = validate_stage_d_four_temperature_results(artifact);
+results = completed_stage_d_projection(artifact.results);
+stage_d = validate_stage_d_four_temperature_results(struct('results',results));
 assert(stage_d.passed && stage_d.stage_d_complete, ...
     'StageE:AcceptedStageDRequired', ...
     'The Stage E integration fixture requires accepted live Stage D data.');
-results = artifact.results;
+end
+
+function projection = completed_stage_d_projection(results)
+% Recover the strict Stage D view in memory; never rewrite canonical data.
+projection = results;
+for name = {'frequency_response','complex_force','force_definition', ...
+        'mapping_snapshot','mapping_audit','force_audit','modal_audits'}
+    if isfield(projection,name{1}), projection = rmfield(projection,name{1}); end
+end
+for name = {'T50','T80','T100'}
+    if isfield(projection.modal,name{1}), projection.modal = rmfield(projection.modal,name{1}); end
+end
+if isfield(projection.damping,'actual_zeta_4T')
+    projection.damping = rmfield(projection.damping,'actual_zeta_4T');
+end
+for name = {'stage_e_source_commit','dynamic_contact_used','nonlinear_bearing_used'}
+    if isfield(projection.meta,name{1}), projection.meta = rmfield(projection.meta,name{1}); end
+end
+if isfield(projection.validation,'stage_e')
+    projection.validation = rmfield(projection.validation,'stage_e');
+end
+projection.progress.stage_e_complete = false;
+projection.progress.last_completed_gate = 'STAGE_D_INDEPENDENT_RELOAD_ACCEPTED';
+for name = {'stage_e_complex_force_complete','stage_e_modal_T20_complete', ...
+        'stage_e_modal_T50_complete','stage_e_modal_T80_complete', ...
+        'stage_e_modal_T100_complete','stage_e_T20_complete', ...
+        'stage_e_T50_complete','stage_e_T80_complete', ...
+        'stage_e_T100_complete','stage_e_modal_audit_complete','first_failed_case'}
+    if isfield(projection.progress,name{1})
+        projection.progress = rmfield(projection.progress,name{1});
+    end
+end
+projection.decision.status = 'FOUR_TEMPERATURE_STATIC_STATES_ACCEPTED';
+projection.decision.stage_d_status = 'FOUR_TEMPERATURE_STATIC_STATES_ACCEPTED';
+projection.decision.allow_stage_e = true;
+for name = {'stage_e_status','allow_stage_f'}
+    if isfield(projection.decision,name{1})
+        projection.decision = rmfield(projection.decision,name{1});
+    end
+end
 end
 
 function results = synthetic_stage_d_results
