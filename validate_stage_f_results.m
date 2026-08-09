@@ -1,5 +1,9 @@
-function validation = validate_stage_f_results(candidate,baseline)
+function validation = validate_stage_f_results(candidate,baseline,frozen_projection)
 %VALIDATE_STAGE_F_RESULTS Independently recompute every Stage F diagnostic.
+
+if nargin < 3
+    frozen_projection = build_stage_f_frozen_input_projection(baseline);
+end
 
 diagnostics = {};
 gate_status = '';
@@ -13,7 +17,7 @@ if ~all(isfield(candidate,required))
 end
 
 if ~same_without_stage_f_validation(candidate,baseline) || ...
-        ~canonical_input_reference_matches(candidate,baseline)
+        ~canonical_input_reference_matches(candidate,frozen_projection)
     diagnostics{end+1} = 'FROZEN';
 end
 if ~same_field(candidate,baseline,'static')
@@ -914,10 +918,10 @@ catch
 end
 end
 
-function pass = canonical_input_reference_matches(candidate,baseline)
+function pass = canonical_input_reference_matches(candidate,frozen_projection)
 try
     actual = candidate.stage_f_execution_audit.canonical_input_reference;
-    expected = stage_f_value_reference(baseline);
+    expected = stage_f_value_reference(frozen_projection);
     pass = isstruct(actual) && isscalar(actual) && ...
         isequal(sort(fieldnames(actual)),{'checksum';'passed';'sha256'}) && ...
         isequal(actual,expected);

@@ -22,7 +22,8 @@ if ~stage_e_baseline_valid(baseline)
 end
 
 started_at = datetime('now'); candidate = baseline;
-canonical_input_reference = stage_f_value_reference(baseline);
+frozen_projection = build_stage_f_frozen_input_projection(baseline);
+canonical_input_reference = stage_f_value_reference(frozen_projection);
 temperatures = [20 50 80 100]; scenarios = {'LOW','NOMINAL','HIGH'};
 bearings = {'front','rear'};
 manifest = repmat(struct('temperature_case_C',0,'bearing','', ...
@@ -159,15 +160,17 @@ function identity = require_stage_f_source(repository_root)
 original = pwd; cleanup = onCleanup(@() cd(original)); cd(repository_root);
 stage_f_change_scope_expected_files = { ...
     'bearing_microphysics/validation/test_stage_f_rolling_element_loads_and_nonlinearity_gate.m', ...
+    'build_stage_f_frozen_input_projection.m', ...
+    'stage_f_canonical_transaction.m', ...
     'validate_stage_f_results.m', ...
     'run_stage_f_recover_loads_and_evaluate_nonlinearity.m'};
-parent_commit = '3912701592a522d00612e68cf1af125b6ea89a44';
-expected_subject = 'fix: align stage f candidate schema validation';
+parent_commit = '84ee68d940b68f5f98bd1c25ebd4c41f95400ed0';
+expected_subject = 'fix: unify stage f frozen input projection';
 [status_status,status_output] = system('git status --porcelain=v1');
 [parent_status,parent_output] = system('git log -1 --format=%P HEAD');
 [subject_status,subject_output] = system('git log -1 --format=%s HEAD');
 [diff_status,diff_output] = system( ...
-    'git diff --name-only 3912701592a522d00612e68cf1af125b6ea89a44..HEAD');
+    'git diff --name-only 84ee68d940b68f5f98bd1c25ebd4c41f95400ed0..HEAD');
 [branch_status,branch_output] = system('git branch --show-current');
 [commit_status,commit_output] = system('git rev-parse HEAD');
 changed = strsplit(strtrim(diff_output),newline);

@@ -67,7 +67,9 @@ try
     if ~isstruct(current) || ~isequal(fieldnames(current),{'results'})
         conflict('Canonical MAT schema is invalid.');
     end
-    validation = validate_stage_f_results(results,current.results);
+    frozen_projection = build_stage_f_frozen_input_projection(current.results);
+    validation = validate_stage_f_results( ...
+        results,current.results,frozen_projection);
     if ~validation.passed
         error('StageF:ComputationFailed', ...
             'STAGE_F_COMPUTATION_FAILED: in-memory candidate failed independent validation.');
@@ -77,7 +79,8 @@ try
     save(temporary_path,'results');
     temporary = load(temporary_path);
     if ~isstruct(temporary) || ~isfield(temporary,'results') || ...
-            ~validate_stage_f_results(temporary.results,current.results).passed
+            ~validate_stage_f_results(temporary.results,current.results, ...
+            frozen_projection).passed
         error('StageF:ComputationFailed', ...
             'STAGE_F_COMPUTATION_FAILED: transaction MAT failed independent reload.');
     end
@@ -104,33 +107,25 @@ if ~isstruct(artifact) || ~isequal(fieldnames(artifact),{'results'})
     error('StageF:IndependentReadonlyValidation', ...
         'STAGE_F_COMPUTATION_FAILED: independent candidate schema is invalid.');
 end
-baseline = stage_e_projection(artifact.results);
-validation = validate_stage_f_results(artifact.results,baseline);
+suffix = '.stage_f_transaction.mat';
+if ~endsWith(candidate_path,suffix)
+    error('StageF:IndependentReadonlyValidation', ...
+        'STAGE_F_COMPUTATION_FAILED: candidate path is not transactional.');
+end
+canonical_path = candidate_path(1:end-numel(suffix));
+current = load(canonical_path);
+if ~isstruct(current) || ~isequal(fieldnames(current),{'results'})
+    error('StageF:IndependentReadonlyValidation', ...
+        'STAGE_F_COMPUTATION_FAILED: canonical baseline schema is invalid.');
+end
+frozen_projection = build_stage_f_frozen_input_projection(current.results);
+validation = validate_stage_f_results( ...
+    artifact.results,current.results,frozen_projection);
 if ~validation.passed
     error('StageF:IndependentReadonlyValidation', ...
         'STAGE_F_COMPUTATION_FAILED: independent candidate validation failed: %s', ...
         strjoin(validation.diagnostics,','));
 end
-end
-
-function baseline = stage_e_projection(candidate)
-baseline = candidate;
-for name = {'bearing_contact','nonlinearity_gate','stage_f_execution_audit'}
-    if isfield(baseline,name{1}), baseline = rmfield(baseline,name{1}); end
-end
-if isfield(baseline,'validation') && isfield(baseline.validation,'stage_f')
-    baseline.validation = rmfield(baseline.validation,'stage_f');
-end
-additions = {'stage_f_load_recovery_complete','stage_f_nonlinear_scan_complete', ...
-    'stage_f_complete','stage_f_gate_status','stage_f_first_trigger','allow_stage_g'};
-for k = 1:numel(additions)
-    if isfield(baseline.progress,additions{k})
-        baseline.progress = rmfield(baseline.progress,additions{k});
-    end
-end
-baseline.progress.last_completed_gate = 'FOUR_TEMPERATURE_1X_RESPONSES_ACCEPTED';
-baseline.decision = struct('status','FOUR_TEMPERATURE_1X_RESPONSES_ACCEPTED', ...
-    'allow_stage_f',true);
 end
 
 function claim_temporary_path(path)
