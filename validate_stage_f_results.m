@@ -12,7 +12,8 @@ if ~all(isfield(candidate,required))
     validation = finish({'SCHEMA'},gate_status); return;
 end
 
-if ~same_without_stage_f_validation(candidate,baseline)
+if ~same_without_stage_f_validation(candidate,baseline) || ...
+        ~canonical_input_reference_matches(candidate,baseline)
     diagnostics{end+1} = 'FROZEN';
 end
 if ~same_field(candidate,baseline,'static')
@@ -27,7 +28,7 @@ end
 if ~same_validation(candidate,baseline)
     diagnostics{end+1} = 'FROZEN_VALIDATION';
 end
-if forbidden_payload_present(candidate)
+if forbidden_payload_present(candidate,baseline)
     diagnostics{end+1} = 'FORBIDDEN_PAYLOAD';
 end
 
@@ -214,12 +215,12 @@ end
 end
 
 function [mapping,matches] = validation_mapping(baseline,actual,temperature,tf,bearing)
-candidate_mapping = candidate_mapping_snapshot(actual);
 if canonical_mapping_available(baseline,tf,bearing)
     mapping = build_stage_f_rolling_element_linearization_mapping( ...
         baseline,temperature,bearing);
-    matches = isequaln(candidate_mapping,mapping);
+    matches = ~isfield(actual,'mapping_snapshot');
 else
+    candidate_mapping = candidate_mapping_snapshot(actual);
     mapping = candidate_mapping;
     matches = true;
 end
@@ -607,29 +608,16 @@ harmonics = struct('F1_complex',F1,'F2_complex',F2,'F3_complex',F3, ...
 end
 
 function pass = frozen_summary_matches(actual,expected,require_formal_audit)
+required = {'checksum';'passed';'sha256'};
 pass = isstruct(actual) && isscalar(actual) && ...
-    all(isfield(actual,{'before','after'}));
-if ~pass, return; end
-required = {'temperature_C','viscosity_Pa_s','clearance_m', ...
-    'contact_state_sha256'};
-before = actual.before; after = actual.after;
-pass = isstruct(before) && isstruct(after) && ...
-    all(isfield(before,required)) && all(isfield(after,required)) && ...
-    isequaln(before,after) && valid_frozen_summary(before);
+    isequal(sort(fieldnames(actual)),required) && ...
+    isequal(actual.passed,true) && ischar(actual.sha256) && ...
+    ~isempty(regexp(actual.sha256,'^[0-9a-f]{64}$','once')) && ...
+    ischar(actual.checksum) && ...
+    ~isempty(regexp(actual.checksum,'^[0-9a-f]{8}$','once'));
 if require_formal_audit
-    pass = pass && isequaln(before,expected);
+    pass = pass && isequaln(actual,stage_f_value_reference(expected));
 end
-end
-
-function pass = valid_frozen_summary(summary)
-pass = isnumeric(summary.temperature_C) && isscalar(summary.temperature_C) && ...
-    isfinite(summary.temperature_C) && ...
-    isnumeric(summary.viscosity_Pa_s) && isscalar(summary.viscosity_Pa_s) && ...
-    isfinite(summary.viscosity_Pa_s) && summary.viscosity_Pa_s > 0 && ...
-    isnumeric(summary.clearance_m) && isscalar(summary.clearance_m) && ...
-    isfinite(summary.clearance_m) && ...
-    ischar(summary.contact_state_sha256) && ...
-    ~isempty(regexp(summary.contact_state_sha256,'^[0-9a-f]{64}$','once'));
 end
 
 function summary = stage_f_frozen_summary(static_state,bearing)
@@ -653,6 +641,17 @@ digest = java.security.MessageDigest.getInstance('SHA-256');
 digest.update(typecast(uint8(bytes),'int8'));
 raw = typecast(digest.digest(),'uint8');
 hash = lower(reshape(dec2hex(raw,2).',1,[]));
+end
+
+function reference = stage_f_value_reference(value)
+bytes = getByteStreamFromArray(value);
+digest = java.security.MessageDigest.getInstance('SHA-256');
+digest.update(typecast(uint8(bytes),'int8'));
+raw = typecast(digest.digest(),'uint8');
+crc = java.util.zip.CRC32;
+crc.update(typecast(uint8(bytes),'int8'));
+reference = struct('sha256',lower(reshape(dec2hex(raw,2).',1,[])), ...
+    'checksum',lower(dec2hex(double(crc.getValue()),8)),'passed',true);
 end
 
 function trigger = independently_rebuild_first_trigger(recovered,scans)
@@ -893,19 +892,35 @@ try
     for name = {'bearing_contact','nonlinearity_gate','stage_f_execution_audit'}
         if isfield(projection,name{1}), projection = rmfield(projection,name{1}); end
     end
-    if isfield(projection,'validation') && isfield(projection.validation,'stage_f')
+    if isfield(baseline.validation,'stage_f')
+        projection.validation.stage_f = baseline.validation.stage_f;
+    elseif isfield(projection,'validation') && isfield(projection.validation,'stage_f')
         projection.validation = rmfield(projection.validation,'stage_f');
     end
     additions = {'stage_f_load_recovery_complete','stage_f_nonlinear_scan_complete', ...
         'stage_f_complete','stage_f_gate_status','stage_f_first_trigger','allow_stage_g'};
     for k = 1:numel(additions)
-        if isfield(projection.progress,additions{k})
+        if isfield(baseline.progress,additions{k})
+            projection.progress.(additions{k}) = baseline.progress.(additions{k});
+        elseif isfield(projection.progress,additions{k})
             projection.progress = rmfield(projection.progress,additions{k});
         end
     end
     projection.progress.last_completed_gate = baseline.progress.last_completed_gate;
     projection.decision = baseline.decision;
     pass = isequaln(projection,baseline);
+catch
+    pass = false;
+end
+end
+
+function pass = canonical_input_reference_matches(candidate,baseline)
+try
+    actual = candidate.stage_f_execution_audit.canonical_input_reference;
+    expected = stage_f_value_reference(baseline);
+    pass = isstruct(actual) && isscalar(actual) && ...
+        isequal(sort(fieldnames(actual)),{'checksum';'passed';'sha256'}) && ...
+        isequal(actual,expected);
 catch
     pass = false;
 end
@@ -925,28 +940,48 @@ function pass = same_field(a,b,name)
 pass = isfield(a,name) && isfield(b,name) && isequaln(a.(name),b.(name));
 end
 
-function present = forbidden_payload_present(value)
-present = recursive_forbidden(value);
+function present = forbidden_payload_present(candidate,baseline)
+payload = struct();
+for name = {'bearing_contact','nonlinearity_gate','stage_f_execution_audit'}
+    payload.(name{1}) = candidate.(name{1});
+end
+if isfield(candidate.validation,'stage_f')
+    payload.validation_stage_f = candidate.validation.stage_f;
+end
+for name = {'stage_f_load_recovery_complete','stage_f_nonlinear_scan_complete', ...
+        'stage_f_complete','stage_f_gate_status','stage_f_first_trigger','allow_stage_g'}
+    if isfield(candidate.progress,name{1})
+        payload.(name{1}) = candidate.progress.(name{1});
+    end
+end
+forbid_mapping = canonical_mapping_available(baseline,'T20','front');
+present = recursive_forbidden(payload,forbid_mapping);
 end
 
-function present = recursive_forbidden(value)
+function present = recursive_forbidden(value,forbid_mapping)
 present = false;
 if isstruct(value)
     for index = 1:numel(value)
         names = fieldnames(value(index));
         for k = 1:numel(names)
             lower_name = lower(names{k});
-            if strcmp(lower_name,'q_m') || contains(lower_name,'newmark')
+            forbidden_exact = {'q_m','q_static','thermal_state','k_t','m','g', ...
+                'formal_parameters','frozen_thermal_state','contact_state_snapshot'};
+            if any(strcmp(lower_name,forbidden_exact)) || ...
+                    contains(lower_name,'newmark') || ...
+                    startsWith(lower_name,'viscosity') || ...
+                    startsWith(lower_name,'clearance') || ...
+                    (forbid_mapping && strcmp(lower_name,'mapping_snapshot'))
                 present = true; return;
             end
-            if recursive_forbidden(value(index).(names{k}))
+            if recursive_forbidden(value(index).(names{k}),forbid_mapping)
                 present = true; return;
             end
         end
     end
 elseif iscell(value)
     for k = 1:numel(value)
-        if recursive_forbidden(value{k}), present = true; return; end
+        if recursive_forbidden(value{k},forbid_mapping), present = true; return; end
     end
 end
 end

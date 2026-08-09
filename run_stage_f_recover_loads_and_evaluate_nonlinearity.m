@@ -22,6 +22,7 @@ if ~stage_e_baseline_valid(baseline)
 end
 
 started_at = datetime('now'); candidate = baseline;
+canonical_input_reference = stage_f_value_reference(baseline);
 temperatures = [20 50 80 100]; scenarios = {'LOW','NOMINAL','HIGH'};
 bearings = {'front','rear'};
 manifest = repmat(struct('temperature_case_C',0,'bearing','', ...
@@ -50,6 +51,7 @@ for temperature = temperatures
                 baseline.meta.stage_d_source_commit;
             recovered.contact_force_resultant = ...
                 recovered.contact_load_resultant;
+            recovered = rmfield(recovered,'mapping_snapshot');
             candidate.bearing_contact.(tf).(scenario).(bearing) = recovered;
             [global_hard,global_strong,first_trigger] = accumulate_load_gate( ...
                 global_hard,global_strong,first_trigger,recovered, ...
@@ -82,8 +84,8 @@ for temperature = temperatures
             scan.exact_dynamic_force_history,scan.phase_values_rad);
         gate = merge_scan_and_gate(scan,harmonics, ...
             candidate.bearing_contact.(tf).NOMINAL.(bearing));
-        gate.thermal_frozen_summary = struct( ...
-            'before',thermal_before,'after',thermal_after);
+        gate.thermal_frozen_summary = stage_f_frozen_reference( ...
+            thermal_before,thermal_after);
         candidate.nonlinearity_gate.(tf).(bearing) = gate;
         manifest_index = manifest_index+1;
         manifest(manifest_index) = struct('temperature_case_C',temperature, ...
@@ -112,6 +114,7 @@ candidate.stage_f_execution_audit = struct('scan_requests',manifest, ...
         'd82ae8cc92a1f1fb55d9d0c14da3efa196e9f085ce22abc5cdd2b345f93af5c8', ...
     'thermal_state_frozen',true,'LOW_scans',0,'HIGH_scans',0, ...
     'source_commit',identity.source_commit, ...
+    'canonical_input_reference',canonical_input_reference, ...
     'elapsed_seconds',seconds(datetime('now')-started_at));
 candidate.progress.stage_f_load_recovery_complete = true;
 candidate.progress.stage_f_nonlinear_scan_complete = true;
@@ -156,20 +159,15 @@ function identity = require_stage_f_source(repository_root)
 original = pwd; cleanup = onCleanup(@() cd(original)); cd(repository_root);
 stage_f_change_scope_expected_files = { ...
     'bearing_microphysics/validation/test_stage_f_rolling_element_loads_and_nonlinearity_gate.m', ...
-    'build_stage_f_rolling_element_linearization_mapping.m', ...
-    'recover_stage_f_rolling_element_1X_loads.m', ...
-    'evaluate_stage_f_nonlinear_bearing_force_scan.m', ...
-    'compute_stage_f_bearing_force_harmonics.m', ...
     'validate_stage_f_results.m', ...
-    'stage_f_canonical_transaction.m', ...
     'run_stage_f_recover_loads_and_evaluate_nonlinearity.m'};
-parent_commit = '7be725a500f4ae3960d5af8e076b98e150fb1dce';
-expected_subject = 'feat: add rolling-element load recovery and nonlinear validity gate';
+parent_commit = '3912701592a522d00612e68cf1af125b6ea89a44';
+expected_subject = 'fix: align stage f candidate schema validation';
 [status_status,status_output] = system('git status --porcelain=v1');
 [parent_status,parent_output] = system('git log -1 --format=%P HEAD');
 [subject_status,subject_output] = system('git log -1 --format=%s HEAD');
 [diff_status,diff_output] = system( ...
-    'git diff --name-only 7be725a500f4ae3960d5af8e076b98e150fb1dce..HEAD');
+    'git diff --name-only 3912701592a522d00612e68cf1af125b6ea89a44..HEAD');
 [branch_status,branch_output] = system('git branch --show-current');
 [commit_status,commit_output] = system('git rev-parse HEAD');
 changed = strsplit(strtrim(diff_output),newline);
@@ -385,6 +383,22 @@ digest = java.security.MessageDigest.getInstance('SHA-256');
 digest.update(typecast(uint8(bytes),'int8'));
 raw = typecast(digest.digest(),'uint8');
 hash = lower(reshape(dec2hex(raw,2).',1,[]));
+end
+
+function reference = stage_f_value_reference(value)
+bytes = getByteStreamFromArray(value);
+digest = java.security.MessageDigest.getInstance('SHA-256');
+digest.update(typecast(uint8(bytes),'int8'));
+raw = typecast(digest.digest(),'uint8');
+crc = java.util.zip.CRC32;
+crc.update(typecast(uint8(bytes),'int8'));
+reference = struct('sha256',lower(reshape(dec2hex(raw,2).',1,[])), ...
+    'checksum',lower(dec2hex(double(crc.getValue()),8)),'passed',true);
+end
+
+function reference = stage_f_frozen_reference(before,after)
+reference = stage_f_value_reference(before);
+reference.passed = isequaln(before,after);
 end
 
 function hash = stage_f_file_sha256(path)

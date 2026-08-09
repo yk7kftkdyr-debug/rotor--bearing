@@ -978,8 +978,7 @@ assert(~validation.passed && diagnostics_contain(validation,'HARMONIC_AUDIT'), .
     'F1X--F3X representations and force semantics must be mandatory.');
 
 tampered = candidate;
-tampered.nonlinearity_gate.T20.front.thermal_frozen_summary.after.viscosity_Pa_s = ...
-    2*tampered.nonlinearity_gate.T20.front.thermal_frozen_summary.after.viscosity_Pa_s;
+tampered.nonlinearity_gate.T20.front.thermal_frozen_summary.passed = false;
 validation = validate_stage_f_results(tampered,baseline);
 assert(~validation.passed && diagnostics_contain(validation,'THERMAL_FROZEN'), ...
     'StageF:ThermalFrozenSummary', ...
@@ -1130,10 +1129,37 @@ assert(all(isfield(candidate.progress,required_progress)));
 assert(~recursive_field_present(candidate,'q_m'));
 assert(~recursive_field_present(candidate,'newmark'));
 
+% Historical Stage E audit flags are inherited baseline evidence, not
+% Stage F payload.  They must remain frozen without being misclassified.
+baseline.meta.newmark_used = false;
+candidate.meta.newmark_used = false;
+baseline.progress.stage_f_complete = false;
+candidate.progress.stage_f_complete = true;
+candidate.stage_f_execution_audit.canonical_input_reference = ...
+    stage_f_input_reference_fixture(baseline);
+validation = validate_stage_f_results(candidate,baseline);
+assert(validation.passed, ...
+    'StageF:InheritedAuditFalsePositive', ...
+    'Inherited Newmark audit flags and Stage F progress placeholders must not fail schema validation.');
+
 forbidden = candidate; forbidden.nonlinearity_gate.T20.front.q_m = zeros(2,32);
-assert(~validate_stage_f_results(forbidden,baseline).passed);
-forbidden = candidate; forbidden.newmark_history = zeros(2,32);
-assert(~validate_stage_f_results(forbidden,baseline).passed);
+validation = validate_stage_f_results(forbidden,baseline);
+assert(~validation.passed && diagnostics_contain(validation,'FORBIDDEN_PAYLOAD'));
+forbidden = candidate;
+forbidden.nonlinearity_gate.T20.front.thermal_state = struct('copied',true);
+validation = validate_stage_f_results(forbidden,baseline);
+assert(~validation.passed && diagnostics_contain(validation,'FORBIDDEN_PAYLOAD'));
+
+for temperature = [20 50 80 100]
+    tf = sprintf('T%d',temperature);
+    for bearing = {'front','rear'}
+        summary = candidate.nonlinearity_gate.(tf).(bearing{1}).thermal_frozen_summary;
+        assert(isequal(sort(fieldnames(summary)),{'checksum';'passed';'sha256'}) && ...
+            isequal(summary.passed,true), ...
+            'StageF:FrozenDigestOnly', ...
+            'Frozen audit must save only hash, checksum and pass/fail.');
+    end
+end
 end
 
 function test_scientific_save_and_computation_failure_atomicity
@@ -1225,18 +1251,13 @@ function test_runner_source_and_change_scope_gate(repository_root)
 runner_path = fullfile(repository_root, ...
     'run_stage_f_recover_loads_and_evaluate_nonlinearity.m');
 runner = fileread(runner_path);
-parent_commit = '7be725a500f4ae3960d5af8e076b98e150fb1dce';
-subject = 'feat: add rolling-element load recovery and nonlinear validity gate';
+parent_commit = '3912701592a522d00612e68cf1af125b6ea89a44';
+subject = 'fix: align stage f candidate schema validation';
 assert(contains(runner,parent_commit) && contains(runner,subject), ...
     'StageF:RunnerCommitGate','Runner commit gate is incomplete.');
 expected = { ...
     'bearing_microphysics/validation/test_stage_f_rolling_element_loads_and_nonlinearity_gate.m', ...
-    'build_stage_f_rolling_element_linearization_mapping.m', ...
-    'recover_stage_f_rolling_element_1X_loads.m', ...
-    'evaluate_stage_f_nonlinear_bearing_force_scan.m', ...
-    'compute_stage_f_bearing_force_harmonics.m', ...
     'validate_stage_f_results.m', ...
-    'stage_f_canonical_transaction.m', ...
     'run_stage_f_recover_loads_and_evaluate_nonlinearity.m'};
 whitelist_block = regexp(runner, ...
     '(?s)stage_f_change_scope_expected_files\s*=\s*\{(.*?)\};', ...
@@ -1756,12 +1777,25 @@ for temperature = [20 50 80 100]
         frozen = struct('temperature_C',temperature, ...
             'viscosity_Pa_s',1,'clearance_m',1, ...
             'contact_state_sha256',repmat('a',1,64));
-        scan.thermal_frozen_summary = struct('before',frozen,'after',frozen);
+        scan.thermal_frozen_summary = stage_f_input_reference_fixture(frozen);
         candidate.nonlinearity_gate.(tf).(bn) = scan;
     end
 end
 candidate.stage_f_execution_audit.source_commit = stage_f_commit;
 candidate.stage_f_execution_audit.elapsed_seconds = 1;
+candidate.stage_f_execution_audit.canonical_input_reference = ...
+    stage_f_input_reference_fixture(baseline);
+end
+
+function reference = stage_f_input_reference_fixture(value)
+bytes = getByteStreamFromArray(value);
+digest = java.security.MessageDigest.getInstance('SHA-256');
+digest.update(typecast(uint8(bytes),'int8'));
+raw = typecast(digest.digest(),'uint8');
+crc = java.util.zip.CRC32;
+crc.update(typecast(uint8(bytes),'int8'));
+reference = struct('sha256',lower(reshape(dec2hex(raw,2).',1,[])), ...
+    'checksum',lower(dec2hex(double(crc.getValue()),8)),'passed',true);
 end
 
 function trigger = enrich_first_trigger(trigger,candidate)
